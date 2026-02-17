@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dark Souls Tribute - Bonfire</title>
+  <style>
+    @font-face {
+      font-family: 'Cinzel';
+      src: url('/assets/fonts/Cinzel-Regular.ttf') format('truetype');
+      font-weight: 400;
+    }
+    @font-face {
+      font-family: 'Cinzel';
+      src: url('/assets/fonts/Cinzel-Bold.ttf') format('truetype');
+      font-weight: 700;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0a0a0a;
+      font-family: 'Cinzel', serif;
+    }
+
+    #app {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    /* UI Overlay */
+    #ui-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    /* Main Menu */
+    #main-menu {
+      position: absolute;
+      left: 8%;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: auto;
+    }
+
+    .menu-item {
+      font-size: 1.5rem;
+      color: #8a8a8a;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      margin: 1.5rem 0;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+      padding-bottom: 0.3rem;
+    }
+
+    .menu-item::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 0;
+      height: 1px;
+      background: linear-gradient(90deg, #d4a54a, transparent);
+      transition: width 0.3s ease;
+    }
+
+    .menu-item:hover {
+      color: #d4a54a;
+      text-shadow: 0 0 20px rgba(212, 165, 74, 0.5);
+    }
+
+    .menu-item:hover::after {
+      width: 100%;
+    }
+
+    /* Press Any Key */
+    #press-key {
+      position: absolute;
+      bottom: 10%;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.9rem;
+      color: #5a5a5a;
+      letter-spacing: 0.5em;
+      text-transform: uppercase;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+
+    /* Title */
+    #title {
+      position: absolute;
+      top: 10%;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+    }
+
+    #title h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: #c0c0c0;
+      letter-spacing: 0.5em;
+      text-transform: uppercase;
+      text-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
+    }
+
+    #title p {
+      font-size: 0.8rem;
+      color: #5a5a5a;
+      letter-spacing: 0.3em;
+      margin-top: 0.5rem;
+    }
+
+    /* Loading */
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #5a5a5a;
+      font-size: 1rem;
+      letter-spacing: 0.3em;
+    }
+
+    #loading.hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="canvas-container"></div>
+    <div id="ui-overlay">
+      <div id="loading">LOADING...</div>
+
+      <div id="title" style="display: none;">
+        <h1>Ashen Flame</h1>
+        <p>A Dark Fantasy Tribute</p>
+      </div>
+
+      <nav id="main-menu" style="display: none;">
+        <div class="menu-item" data-action="new">New Journey</div>
+        <div class="menu-item" data-action="continue">Continue</div>
+        <div class="menu-item" data-action="settings">Settings</div>
+        <div class="menu-item" data-action="quit">Quit</div>
+      </nav>
+
+      <div id="press-key" style="display: none;">Press Any Key</div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
