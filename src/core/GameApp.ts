@@ -34,6 +34,9 @@ import { HUDView } from '../ui/HUDView';
 import { BossBar } from '../ui/BossBar';
 import { TutorialPrompts, TUTORIAL_MESSAGES } from '../ui/TutorialPrompts';
 
+// Assets
+import { CharacterModel, CharacterModelConfig, KNIGHT_MODEL_PRESETS } from '../assets/CharacterModel';
+
 /**
  * Game state enum
  */
@@ -65,6 +68,9 @@ class GameAppClass {
   private boss: Boss | null = null;
   private camera: ThirdPersonCamera | null = null;
   private lockOn: LockOnSystem | null = null;
+
+  // Character model
+  private characterModel: CharacterModel | null = null;
 
   // Debug
   private debugMesh: THREE.LineSegments | null = null;
@@ -143,8 +149,8 @@ class GameAppClass {
     // Get spawn position
     const spawnPos = LevelLoader.getPlayerSpawn();
 
-    // Create player
-    this.createPlayer(spawnPos, scene);
+    // Create player (with 3D model loading)
+    await this.createPlayer(spawnPos, scene);
 
     // Setup camera
     this.setupCamera();
@@ -189,18 +195,32 @@ class GameAppClass {
   /**
    * Create player entity
    */
-  private createPlayer(position: THREE.Vector3, scene: THREE.Scene): void {
-    // Create player mesh (placeholder capsule)
-    const geometry = new THREE.CapsuleGeometry(0.4, 1.0, 8, 16);
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x4a90d9,
-      roughness: 0.7,
-      metalness: 0.3,
-    });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
+  private async createPlayer(position: THREE.Vector3, scene: THREE.Scene): Promise<void> {
+    // Try to load 3D character model
+    let mesh: THREE.Object3D;
+
+    try {
+      // Try to load knight model (Solus preset or custom)
+      this.characterModel = new CharacterModel(KNIGHT_MODEL_PRESETS.solus);
+      await this.characterModel.load();
+      mesh = this.characterModel.getObject();
+      scene.add(mesh);
+      console.log('[GameApp] 3D character model loaded');
+    } catch (error) {
+      console.warn('[GameApp] Failed to load 3D model, using placeholder capsule:', error);
+
+      // Fallback: Create placeholder capsule mesh
+      const geometry = new THREE.CapsuleGeometry(0.4, 1.0, 8, 16);
+      const material = new THREE.MeshStandardMaterial({
+        color: 0x4a90d9,
+        roughness: 0.7,
+        metalness: 0.3,
+      });
+      mesh = new THREE.Mesh(geometry, material);
+      (mesh as THREE.Mesh).castShadow = true;
+      (mesh as THREE.Mesh).receiveShadow = true;
+      scene.add(mesh);
+    }
 
     // Create player
     const config: PlayerConfig = {
@@ -210,6 +230,13 @@ class GameAppClass {
     };
 
     this.player = new Player(config);
+
+    // Set animation callback if model was loaded
+    if (this.characterModel?.isLoaded()) {
+      this.player.setAnimationCallback((name, options) => {
+        this.characterModel?.playAnimation(name, options);
+      });
+    }
 
     // Emit initial health/stamina
     EventBus.emit('player:healthChanged', {
@@ -229,13 +256,14 @@ class GameAppClass {
     if (!this.player) return;
 
     this.camera = new ThirdPersonCamera({
-      target: this.player.position,
       distance: 5,
-      height: 2,
-      sensitivity: 0.003,
+      heightOffset: 2,
+      shoulderOffset: 0, // 캐릭터를 카메라 중앙에 배치
+      rotationSensitivity: 0.003,
     });
 
-    this.camera.init();
+    this.camera.setTarget(this.player.position);
+    this.camera.snapToTarget();
   }
 
   /**
@@ -245,10 +273,10 @@ class GameAppClass {
     if (!this.player) return;
 
     this.lockOn = new LockOnSystem({
-      maxDistance: 20,
-      maxAngle: Math.PI / 3,
-      playerPosition: this.player.position,
+      maxLockDistance: 20,
+      lockOnFOV: Math.PI / 3,
     });
+    this.lockOn.setPlayerPosition(this.player.position);
   }
 
   /**
@@ -264,7 +292,10 @@ class GameAppClass {
 
     // Register as lock-on target
     if (this.lockOn) {
-      this.lockOn.addTarget(this.boss.id, this.boss.position);
+      this.lockOn.registerTarget({
+        entityId: this.boss.id,
+        position: this.boss.position,
+      });
     }
 
     return this.boss.id;
@@ -315,8 +346,8 @@ class GameAppClass {
       }
 
       // Update lock-on target
-      if (this.lockOn && this.lockOn.hasTarget()) {
-        const targetPos = this.lockOn.getTargetPosition();
+      if (this.lockOn && this.lockOn.isLockedOn) {
+        const targetPos = this.lockOn.lockOnPoint;
         if (targetPos) {
           this.player.setLockOnTarget(targetPos);
         }
@@ -358,9 +389,15 @@ class GameAppClass {
     if (this.camera && this.player) {
       this.camera.setTarget(this.player.position);
 
+      // 마우스 입력으로 카메라 회전 적용
+      const lookDelta = InputManager.getLookDelta();
+      if (lookDelta.x !== 0 || lookDelta.y !== 0) {
+        this.camera.rotate(lookDelta.x, lookDelta.y);
+      }
+
       // Update lock-on camera behavior
-      if (this.lockOn && this.lockOn.hasTarget()) {
-        const targetPos = this.lockOn.getTargetPosition();
+      if (this.lockOn && this.lockOn.isLockedOn) {
+        const targetPos = this.lockOn.lockOnPoint;
         if (targetPos) {
           this.camera.setLockOnTarget(targetPos);
         }
@@ -375,13 +412,19 @@ class GameAppClass {
     if (this.lockOn && this.player) {
       this.lockOn.setPlayerPosition(this.player.position);
       if (this.camera) {
-        this.lockOn.setCameraForward(this.camera.forward);
+        this.lockOn.setCamera(this.camera.position, this.camera.forward);
       }
+      this.lockOn.update(dt);
     }
 
     // Update boss lock-on target position
     if (this.lockOn && this.boss) {
       this.lockOn.updateTargetPosition(this.boss.id, this.boss.position);
+    }
+
+    // Update character model animations
+    if (this.characterModel) {
+      this.characterModel.update(dt);
     }
 
     // Update debug mesh
@@ -411,10 +454,10 @@ class GameAppClass {
     // Lock-on toggle
     if (data.action === 'LockOn' && data.pressed) {
       if (this.lockOn) {
-        if (this.lockOn.hasTarget()) {
-          this.lockOn.clearTarget();
+        if (this.lockOn.isLockedOn) {
+          this.lockOn.releaseLock();
         } else {
-          this.lockOn.acquireTarget();
+          this.lockOn.acquireLock();
         }
       }
     }
@@ -638,6 +681,11 @@ class GameAppClass {
     if (this.player) {
       this.player.destroy();
       this.player = null;
+    }
+
+    if (this.characterModel) {
+      this.characterModel.dispose();
+      this.characterModel = null;
     }
 
     if (this.boss) {
