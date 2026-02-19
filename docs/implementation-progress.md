@@ -1,6 +1,6 @@
 # Dark Souls 웹 게임 구현 진행 상황
 
-**최종 업데이트**: 2026-02-19 (5차 업데이트)
+**최종 업데이트**: 2026-02-19 (8차 업데이트)
 
 ---
 
@@ -13,11 +13,11 @@ Phase 3: 물리/KCC        [██████████] 100% (3/3)
 Phase 4: 플레이어        [██████████] 100% (5/5)
 Phase 5: 카메라          [██████████] 100% (2/2)
 Phase 6: 전투            [██████████] 100% (3/3)
-Phase 7: 보스 AI         [░░░░░░░░░░]   0% (0/2)
-Phase 8: 레벨            [░░░░░░░░░░]   0% (0/3)
-Phase 9: UI              [░░░░░░░░░░]   0% (0/3)
+Phase 7: 보스 AI         [██████████] 100% (2/2)
+Phase 8: 레벨            [██████████] 100% (3/3)
+Phase 9: UI              [██████████] 100% (3/3)
 
-전체: █████████████████████░░ 74.1% (20/27)
+전체: ██████████████████████████ 100% (27/27)
 ```
 
 ---
@@ -523,33 +523,380 @@ AttackSystem.endAttack(attack);
 
 ---
 
-## 현재 진행 중
+### Phase 7: 보스 AI ✅
 
-### Phase 7 착수 예정
-- `src/ai/BossFSM.ts` - 보스 상태 머신
-- `src/ai/Boss.ts` - 보스 엔티티
+#### 1. BossFSM.ts - 보스 상태 머신 ✅
+
+**파일**: `src/ai/BossFSM.ts`
+
+- 보스 AI 상태 관리 (Idle, Engage, AttackTelegraph, AttackActive, Recover, Staggered, Dead)
+- 가중치 기반 공격 패턴 선택
+- 거리/쿨다운 기반 패턴 필터링
+- 타겟 추적 (거리, 각도)
+- 텔레그래프 → 액티브 → 리커버리 흐름
+
+**상태 흐름**:
+```
+Idle → (플레이어 감지) → Engage → (공격 결정) → AttackTelegraph
+                                                    ↓
+                                              AttackActive
+                                                    ↓
+                                                Recover → Engage
+
+(피격 시 포이즈 0) → Staggered → Engage
+(HP 0) → Dead
+```
+
+**기본 패턴 (TUTORIAL_BOSS_PATTERNS)**:
+- `boss_wide_sweep` (30%) - 근접 0-4m, 텔레그래프 0.8s
+- `boss_overhead_smash` (25%) - 근접 0-3.5m, 텔레그래프 1.0s
+- `boss_jump_slam` (20%) - 중거리 4-12m, 텔레그래프 0.6s
+- `boss_aoe_stomp` (25%) - 범위 0-5m, 텔레그래프 0.5s
+
+**사용 예시**:
+```typescript
+import { BossFSM, BossStateType, TUTORIAL_BOSS_PATTERNS } from './ai/BossFSM';
+
+const fsm = new BossFSM('boss_1', TUTORIAL_BOSS_PATTERNS, {
+  onStateEnter: (state, prev) => console.log(`Boss: ${prev} -> ${state}`),
+  onAttackSelected: (pattern) => console.log(`Selected: ${pattern.attackId}`),
+  onAnimationTrigger: (name, opts) => playAnimation(name),
+});
+
+// 타겟 설정
+fsm.setTarget('player');
+fsm.updateTargetInfo(distance, angle);
+
+// 매 프레임
+fsm.update(dt);
+
+// 쿼리
+if (fsm.currentState === BossStateType.AttackActive) {
+  // 히트박스 활성화
+}
+if (fsm.isVulnerable) {
+  // 크리티컬 가능
+}
+```
+
+#### 2. Boss.ts - 보스 엔티티 ✅
+
+**파일**: `src/ai/Boss.ts`
+
+- BossFSM 기반 AI 제어
+- 3D 메시 및 Rapier 물리 바디 관리
+- DamageSystem 연동 (HP, 포이즈, 스태거)
+- AttackSystem 연동 (히트박스 실행)
+- 플런지 감지 영역 (센서 콜라이더)
+- 타겟 추적 및 이동
+- 포이즈 자동 회복
+
+**주요 기능**:
+- `spawn(scene)` - 월드에 보스 스폰
+- `despawn(scene)` - 월드에서 제거
+- `update(dt)` - 매 프레임 업데이트
+- `setTarget(id, position)` - 타겟 설정
+- `checkPlungeZone(pos, velY)` - 플런지 영역 체크
+- `receivePlungeAttack()` - 플런지 히트 처리
+
+**사용 예시**:
+```typescript
+import { Boss, TUTORIAL_BOSS_CONFIG } from './ai/Boss';
+
+// 보스 생성
+const boss = new Boss({
+  ...TUTORIAL_BOSS_CONFIG,
+  position: new THREE.Vector3(0, 0, 20),
+});
+
+// 스폰
+boss.spawn(scene);
+
+// 타겟 설정
+boss.setTarget('player', player.position);
+
+// 게임 루프
+function update(dt: number) {
+  boss.updateTargetPosition(player.position);
+  boss.update(dt);
+
+  // 플런지 체크
+  if (boss.checkPlungeZone(player.position, player.velocityY)) {
+    if (playerIsAttacking) {
+      boss.receivePlungeAttack();
+    }
+  }
+}
+
+// 이벤트 수신
+EventBus.on('boss:died', () => {
+  console.log('Victory!');
+});
+```
+
+**설정 (TUTORIAL_BOSS_CONFIG)**:
+```typescript
+{
+  id: 'boss_tutorial',
+  name: 'Asylum Demon',
+  maxHP: 1000,
+  maxPoise: 100,
+  poiseRecoveryDelay: 3.0,
+  poiseRecoveryRate: 20.0,
+  moveSpeed: 2.5,
+  turnSpeed: 2.0,
+  colliderRadius: 1.5,
+  colliderHeight: 4.0,
+  plungeDetectionRadius: 2.5,
+  plungeDetectionHeight: 3.0,
+}
+```
 
 ---
 
-## 예정된 작업
+### Phase 8: 레벨 시스템 ✅
 
-### Phase 7: 보스 AI
-- `src/ai/BossFSM.ts` - 보스 상태 머신
-- `src/ai/Boss.ts` - 보스 엔티티
+#### 1. TriggerVolume.ts - 트리거 영역 ✅
 
-### Phase 8: 레벨 시스템
-- `src/level/TriggerVolume.ts` - 트리거 영역
-- `src/level/GameFlags.ts` - 게임 플래그
-- `src/level/LevelLoader.ts` - 레벨 로딩
+**파일**: `src/level/TriggerVolume.ts`
 
-### Phase 9: UI 시스템
-- `src/ui/HUDView.ts` - HUD (HP/스태미나 바)
-- `src/ui/BossBar.ts` - 보스 HP 바
-- `src/ui/TutorialPrompts.ts` - 튜토리얼 메시지
+- 센서 콜라이더 래핑 (Box, Sphere, Cylinder)
+- onEnter/onExit/onStay 콜백
+- EventBus 연동 (trigger:enter, trigger:exit, trigger:stay)
+- 원샷 트리거 지원
+- TriggerManager 싱글톤으로 전역 관리
+
+**사용 예시**:
+```typescript
+import { TriggerManager, TriggerShape } from './level/TriggerVolume';
+
+// 트리거 생성
+const trigger = TriggerManager.create({
+  id: 'boss_room',
+  position: new THREE.Vector3(0, 1, 20),
+  shape: TriggerShape.Box,
+  halfExtents: new THREE.Vector3(5, 3, 5),
+  oneShot: false,
+}, {
+  onEnter: (entityId) => console.log(`${entityId} entered!`),
+  onExit: (entityId) => console.log(`${entityId} exited!`),
+});
+
+// 스폰
+TriggerManager.spawnAll();
+
+// 매 프레임
+TriggerManager.update(dt);
+```
+
+#### 2. GameFlags.ts - 게임 플래그 ✅
+
+**파일**: `src/level/GameFlags.ts`
+
+- 게임 진행 상태 플래그 관리
+- 타입 안전한 플래그 enum (GameFlag)
+- EventBus 연동 (flag:set, flag:cleared)
+- localStorage 저장/로드
+- 조건 체커 (require, requireAny, exclude)
+
+**플래그 목록**:
+- 튜토리얼: `LEARNED_ROLL`, `LEARNED_ATTACK`, `LEARNED_BLOCK`
+- 장비: `HAS_WEAPON`, `HAS_SHIELD`, `HAS_ESTUS`
+- 보스: `MET_BOSS_ONCE`, `BOSS_DEFEATED`, `BOSS_PLUNGED`
+- 체크포인트: `CHECKPOINT_CELL`, `CHECKPOINT_CORRIDOR`
+- 문/단축키: `BOSS_DOOR_OPENED`, `SHORTCUT_UNLOCKED`
+
+**사용 예시**:
+```typescript
+import { GameFlags, GameFlag, checkFlagCondition } from './level/GameFlags';
+
+// 플래그 설정
+GameFlags.set(GameFlag.HAS_WEAPON);
+
+// 플래그 체크
+if (GameFlags.is(GameFlag.MET_BOSS_ONCE)) {
+  // 보스 이미 만남
+}
+
+// 복합 조건
+const canEnterBossRoom = checkFlagCondition({
+  require: [GameFlag.HAS_WEAPON],
+  exclude: [GameFlag.BOSS_DEFEATED],
+});
+
+// 저장/로드
+GameFlags.saveToStorage();
+GameFlags.loadFromStorage();
+```
+
+#### 3. LevelLoader.ts - 레벨 로딩 ✅
+
+**파일**: `src/level/LevelLoader.ts`
+
+- JSON 기반 레벨 데이터 로딩
+- 지오메트리 생성 (Box, Plane, Cylinder, Ramp)
+- 물리 콜라이더 자동 생성
+- 트리거 자동 배치
+- 스포너 시스템 (보스, 적, 아이템)
+- 체크포인트 관리
+- 환경 설정 (조명, 안개)
+
+**레벨 데이터 구조**:
+```typescript
+interface LevelData {
+  id: string;
+  name: string;
+  playerSpawn: Vec3;
+  geometry: GeometryDef[];  // 레벨 지오메트리
+  triggers: TriggerDef[];   // 트리거 영역
+  spawners: SpawnerDef[];   // 엔티티 스포너
+  checkpoints: CheckpointDef[]; // 체크포인트
+  ambientLight?: number;
+  fogColor?: number;
+}
+```
+
+**사용 예시**:
+```typescript
+import { LevelLoader, TUTORIAL_LEVEL } from './level/LevelLoader';
+
+// 레벨 로드
+await LevelLoader.load(TUTORIAL_LEVEL, scene);
+
+// 플레이어 스폰 위치
+const spawn = LevelLoader.getPlayerSpawn();
+
+// 스포너 콜백 등록
+LevelLoader.registerSpawnCallback('boss_tutorial', (spawner) => {
+  const boss = new Boss(TUTORIAL_BOSS_CONFIG);
+  boss.spawn(scene);
+  return boss.id;
+});
+
+// 스폰 처리
+LevelLoader.processSpawns();
+
+// 레벨 언로드
+LevelLoader.unload();
+```
+
+**내장 튜토리얼 레벨 (TUTORIAL_LEVEL)**:
+- 감방 → 복도 → 보스룸 레이아웃
+- 튜토리얼 트리거 (구르기 학습)
+- 체크포인트 3개 (cell, corridor, boss_room)
+- 보스 스포너 (조건부: BOSS_DEFEATED가 아닐 때)
 
 ---
 
-## 디렉터리 구조 (현재 상태)
+### Phase 9: UI 시스템 ✅
+
+#### 1. HUDView.ts - HUD (HP/스태미나 바) ✅
+
+**파일**: `src/ui/HUDView.ts`
+
+- Dark Souls 스타일 HP/스태미나 바
+- EventBus 자동 연동 (player:healthChanged, player:staminaChanged)
+- 지연 데미지 표시 (노란색 → 빨간색)
+- 낮은 HP 경고 애니메이션
+- 데미지 플래시 효과
+
+**사용 예시**:
+```typescript
+import { HUDView } from './ui/HUDView';
+
+// 초기화
+HUDView.init();
+
+// 수동 업데이트 (EventBus 사용 시 자동)
+HUDView.setHP(80, 100);
+HUDView.setStamina(50, 100);
+
+// 표시/숨김
+HUDView.toggle();
+
+// 정리
+HUDView.destroy();
+```
+
+#### 2. BossBar.ts - 보스 HP 바 ✅
+
+**파일**: `src/ui/BossBar.ts`
+
+- 화면 하단 중앙 보스 HP 바
+- EventBus 자동 연동 (boss:engaged, boss:healthChanged, boss:died, boss:staggered)
+- 지연 데미지 표시
+- 스태거 시 금색 펄스 애니메이션
+- 사망 시 자동 페이드 아웃
+
+**사용 예시**:
+```typescript
+import { BossBar } from './ui/BossBar';
+
+// 초기화
+BossBar.init();
+
+// 표시 (EventBus 통해 자동 호출됨)
+BossBar.show('Asylum Demon', 1000, 1000);
+
+// 숨김
+BossBar.hide();
+
+// 정리
+BossBar.destroy();
+```
+
+#### 3. TutorialPrompts.ts - 튜토리얼 메시지 ✅
+
+**파일**: `src/ui/TutorialPrompts.ts`
+
+- 화면 하단 튜토리얼 프롬프트
+- 키 입력 힌트 표시 (자동 포맷팅)
+- EventBus 자동 연동 (ui:tutorialShow, ui:tutorialHide)
+- 자동 숨김 (5초)
+- 메시지 큐잉 지원
+- 미리 정의된 튜토리얼 메시지 (TUTORIAL_MESSAGES)
+
+**미리 정의된 메시지**:
+- `ROLL`: 구르기 안내
+- `ATTACK`: 공격 안내
+- `BLOCK`: 가드 안내
+- `LOCK_ON`: 락온 안내
+- `HEAL`: 회복 안내
+- `PLUNGE`: 플런지 공격 안내
+
+**사용 예시**:
+```typescript
+import { TutorialPrompts, TUTORIAL_MESSAGES, showTutorialSequence } from './ui/TutorialPrompts';
+
+// 초기화
+TutorialPrompts.init();
+
+// 메시지 표시
+TutorialPrompts.show('Roll to evade enemy attacks', 'Space');
+
+// 미리 정의된 메시지
+TutorialPrompts.showPredefined('ROLL');
+
+// 시퀀스 표시
+await showTutorialSequence([
+  { message: 'Move around', action: 'W A S D' },
+  { message: 'Roll to evade', action: 'Space' },
+  { message: 'Attack enemies', action: 'MouseLeft' },
+]);
+
+// 정리
+TutorialPrompts.destroy();
+```
+
+---
+
+## 구현 완료
+
+모든 Phase (1-9)가 완료되었습니다.
+
+---
+
+## 디렉터리 구조 (최종)
 
 ```
 src/
@@ -581,14 +928,56 @@ src/
 │   ├── IFrameSystem.ts  ✅ NEW
 │   ├── DamageSystem.ts  ✅ NEW
 │   └── AttackSystem.ts  ✅ NEW
+├── ai/
+│   ├── BossFSM.ts       ✅ NEW
+│   └── Boss.ts          ✅ NEW
+├── level/
+│   ├── TriggerVolume.ts ✅ NEW
+│   ├── GameFlags.ts     ✅ NEW
+│   └── LevelLoader.ts   ✅ NEW
 ├── effects/            (기존 유지)
 └── ui/
-    └── Menu.ts         (기존)
+    ├── Menu.ts         (기존)
+    ├── HUDView.ts      ✅ NEW
+    ├── BossBar.ts      ✅ NEW
+    └── TutorialPrompts.ts ✅ NEW
 ```
 
 ---
 
 ## 변경 로그
+
+### 2026-02-19 (8차 업데이트)
+
+#### 추가됨
+- `src/ui/HUDView.ts` - Dark Souls 스타일 HP/스태미나 바
+- `src/ui/BossBar.ts` - 보스 HP 바 (스태거 애니메이션 포함)
+- `src/ui/TutorialPrompts.ts` - 튜토리얼 메시지 시스템
+
+#### 진행률
+- Phase 1-9 완료
+- 전체 100% 완료 🎉
+
+### 2026-02-19 (7차 업데이트)
+
+#### 추가됨
+- `src/level/TriggerVolume.ts` - 센서 기반 트리거 시스템
+- `src/level/GameFlags.ts` - 게임 진행 플래그 관리
+- `src/level/LevelLoader.ts` - JSON 기반 레벨 로딩 (내장 튜토리얼 레벨 포함)
+
+#### 진행률
+- Phase 1-8 완료
+- 전체 92.6% 완료
+
+### 2026-02-19 (6차 업데이트)
+
+#### 추가됨
+- `src/ai/BossFSM.ts` - 보스 상태 머신 (가중치 기반 패턴 선택)
+- `src/ai/Boss.ts` - 보스 엔티티 (물리, 전투, AI 통합)
+
+#### 진행률
+- Phase 1-7 완료
+- 전체 81.5% 완료
 
 ### 2026-02-19 (5차 업데이트)
 
@@ -703,8 +1092,58 @@ src/
 - **흐름**: IFrameSystem 체크 → Guard 체크 → HP/Poise 적용
 - **이벤트**: combat:dodged, combat:blocked, combat:parried, combat:damage
 
+### 11. 보스 AI 패턴 선택 (가중치 기반)
+- **이유**: 다양하고 예측 가능한 보스 행동
+- **구현**: 거리/쿨다운 필터링 후 가중치 랜덤 선택
+- **텔레그래프**: 공격 전 예고 시간 (0.5-1.0초) → 플레이어 반응 기회
+- **쿨다운**: 같은 패턴 연속 사용 방지
+
+### 12. 플런지 공격 감지
+- **이유**: Dark Souls 스타일 플런지 기믹
+- **구현**: 보스 상부에 센서 콜라이더 배치
+- **조건**: 플레이어가 보스 위에서 하강(5m/s 이상) + 공격 입력
+- **효과**: 보스 즉시 스태거
+
+### 13. 포이즈 회복 시스템
+- **이유**: 지속 공격 → 스태거 가능하게
+- **구현**: 마지막 피격 후 지연 시간(3초) 이후 자동 회복
+- **회복 속도**: 초당 20 포이즈
+
+### 14. 트리거 볼륨 (센서 기반)
+- **이유**: 레벨 이벤트 (보스룸 진입, 체크포인트, 아이템 픽업)
+- **구현**: Rapier 센서 콜라이더 + 매 프레임 오버랩 쿼리
+- **이벤트**: onEnter/onExit/onStay 콜백 + EventBus 연동
+- **원샷**: 한 번 트리거 후 비활성화 옵션
+
+### 15. 게임 플래그 시스템
+- **이유**: 게임 진행 상태 추적 (튜토리얼, 보스 만남, 장비 획득)
+- **구현**: Map 기반 플래그 + localStorage 영속화
+- **조건 체커**: require (AND), requireAny (OR), exclude (NOT)
+- **이벤트**: flag:set, flag:cleared로 다른 시스템과 연동
+
+### 16. JSON 기반 레벨 로딩
+- **이유**: 데이터 기반 레벨 디자인, 런타임 수정 용이
+- **구조**: geometry + triggers + spawners + checkpoints
+- **지오메트리**: Box, Plane, Cylinder, Ramp (자동 물리 콜라이더)
+- **스포너**: 콜백 등록으로 엔티티 타입별 처리
+
+### 17. 지연 데미지 표시 (HP 바)
+- **이유**: Dark Souls 스타일 피해 시각화
+- **구현**: 노란색 바가 실제 HP보다 천천히 감소
+- **타이밍**: 데미지 후 300-500ms 지연 → 0.5-0.8초에 걸쳐 페이드
+
+### 18. 튜토리얼 메시지 큐잉
+- **이유**: 연속 트리거 시 메시지 손실 방지
+- **구현**: 표시 중일 때 새 메시지는 큐에 추가
+- **처리**: 현재 메시지 종료 후 자동으로 다음 메시지 표시
+
+### 19. EventBus 기반 UI 연동
+- **이유**: UI와 게임 로직 디커플링
+- **이벤트**: player:healthChanged, boss:engaged, ui:tutorialShow 등
+- **패턴**: UI 초기화 시 EventBus 구독, destroy 시 구독 해제
+
 ---
 
-## 다음 업데이트 예정
+## 구현 완료
 
-Phase 7 (보스 AI) 완료 후 업데이트 예정
+모든 Phase (1-9) 구현이 완료되었습니다. 다음 단계는 통합 테스트 및 폴리싱입니다.
