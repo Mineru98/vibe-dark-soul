@@ -1,17 +1,6 @@
-/**
- * CharacterModel - 캐릭터 3D 모델 및 애니메이션 관리
- *
- * GLTF/GLB 모델을 로드하고 애니메이션을 제어합니다.
- * 다크소울 스타일의 기사 캐릭터를 지원합니다.
- */
-
 import * as THREE from 'three';
 import { AssetLoader, LoadedModel } from './AssetLoader';
 
-/**
- * 애니메이션 매핑 타입
- * 게임 상태 -> 모델 애니메이션 이름
- */
 export interface AnimationMapping {
   idle: string;
   walk: string;
@@ -33,20 +22,31 @@ export interface AnimationMapping {
   use_item?: string;
 }
 
-/**
- * 캐릭터 모델 설정
- */
 export interface CharacterModelConfig {
   modelPath: string;
   scale?: number;
   heightOffset?: number;
-  rotationX?: number; // X축 회전 (라디안) - Z-up 모델 보정용
+  rotationX?: number;
   animationMapping?: Partial<AnimationMapping>;
 }
 
-/**
- * 기본 애니메이션 매핑 (Mixamo 스타일)
- */
+type AnimationKey = keyof AnimationMapping;
+type ProceduralMotionType =
+  | 'none'
+  | 'attackLight'
+  | 'attackHeavy'
+  | 'roll'
+  | 'backstep'
+  | 'guard'
+  | 'hitStun';
+
+interface ProceduralMotion {
+  type: ProceduralMotionType;
+  time: number;
+  duration: number;
+  loop: boolean;
+}
+
 const DEFAULT_ANIMATION_MAPPING: AnimationMapping = {
   idle: 'Idle',
   walk: 'Walk',
@@ -54,16 +54,32 @@ const DEFAULT_ANIMATION_MAPPING: AnimationMapping = {
   sprint: 'Sprint',
   roll: 'Roll',
   backstep: 'Backstep',
-  attack_light: 'Attack',
-  attack_heavy: 'Heavy Attack',
-  guard: 'Block',
-  hit_stun: 'Hit',
+  attack_light: 'Attack_Light_1',
+  attack_heavy: 'Attack_Heavy',
+  attack_combo_1: 'Attack_Light_1',
+  attack_combo_2: 'Attack_Light_2',
+  attack_combo_3: 'Attack_Light_3',
+  guard: 'Guard_Idle',
+  guard_hit: 'Guard_Hit',
+  hit_stun: 'Hit_React',
   death: 'Death',
+  falling: 'Fall',
+  landing: 'Land',
+  use_item: 'Use_Item',
 };
 
-/**
- * CharacterModel 클래스
- */
+const PROCEDURAL_DURATIONS: Record<
+  Exclude<ProceduralMotionType, 'none'>,
+  number
+> = {
+  attackLight: 0.42,
+  attackHeavy: 0.62,
+  roll: 0.75,
+  backstep: 0.45,
+  guard: 0.8,
+  hitStun: 0.3,
+};
+
 export class CharacterModel {
   private model: LoadedModel | null = null;
   private root: THREE.Group;
@@ -73,49 +89,59 @@ export class CharacterModel {
   private animationMapping: AnimationMapping;
   private config: CharacterModelConfig;
 
-  // 로드 상태
   private loaded: boolean = false;
   private loading: boolean = false;
+
+  private rightArmBone: THREE.Bone | null = null;
+  private leftArmBone: THREE.Bone | null = null;
+  private rightForeArmBone: THREE.Bone | null = null;
+  private rightHandBone: THREE.Bone | null = null;
+  private spineBone: THREE.Bone | null = null;
+  private sword: THREE.Group | null = null;
+  private modelBasePitch: number = 0;
+
+  private proceduralMotion: ProceduralMotion = {
+    type: 'none',
+    time: 0,
+    duration: 0,
+    loop: false,
+  };
+
+  private tempEuler: THREE.Euler = new THREE.Euler();
+  private tempQuat: THREE.Quaternion = new THREE.Quaternion();
 
   constructor(config: CharacterModelConfig) {
     this.config = config;
     this.root = new THREE.Group();
     this.root.name = 'CharacterModel';
-
-    // 애니메이션 매핑 병합
     this.animationMapping = {
       ...DEFAULT_ANIMATION_MAPPING,
       ...config.animationMapping,
     };
   }
 
-  /**
-   * 모델 로드
-   */
   async load(): Promise<void> {
     if (this.loaded || this.loading) return;
 
     this.loading = true;
-
     try {
       this.model = await AssetLoader.loadModel(this.config.modelPath, {
         scale: this.config.scale ?? 1,
         offset: new THREE.Vector3(0, this.config.heightOffset ?? 0, 0),
       });
 
-      // X축 회전 적용 (Z-up 모델 보정)
       if (this.config.rotationX !== undefined) {
         this.model.scene.rotation.x = this.config.rotationX;
       }
 
-      // 루트에 모델 추가
       this.root.add(this.model.scene);
 
-      // 애니메이션 믹서 설정
       if (this.model.mixer) {
         this.mixer = this.model.mixer;
         this.setupAnimations();
       }
+
+      this.setupCombatRig();
 
       this.loaded = true;
       console.log('[CharacterModel] Model loaded successfully');
@@ -127,26 +153,103 @@ export class CharacterModel {
     }
   }
 
-  /**
-   * 애니메이션 설정
-   */
   private setupAnimations(): void {
     if (!this.model || !this.mixer) return;
 
-    // 모든 애니메이션 클립에서 액션 생성
     for (const clip of this.model.animations) {
       const action = this.mixer.clipAction(clip);
       this.actions.set(clip.name, action);
       console.log(`[CharacterModel] Animation registered: ${clip.name}`);
     }
 
-    // 기본 idle 애니메이션 재생
     this.playAnimation('idle', { loop: true });
   }
 
-  /**
-   * 애니메이션 재생
-   */
+  private setupCombatRig(): void {
+    if (!this.model) return;
+
+    this.modelBasePitch = this.model.scene.rotation.x;
+
+    this.spineBone = this.findBone('mixamorigSpine2');
+    this.rightArmBone = this.findBone('mixamorigRightArm');
+    this.leftArmBone = this.findBone('mixamorigLeftArm');
+    this.rightForeArmBone = this.findBone('mixamorigRightForeArm');
+    this.rightHandBone = this.findBone('mixamorigRightHand');
+
+    this.attachSwordToRightHand();
+  }
+
+  private findBone(name: string): THREE.Bone | null {
+    if (!this.model) return null;
+    const node = this.model.scene.getObjectByName(name);
+    return node instanceof THREE.Bone ? node : null;
+  }
+
+  private attachSwordToRightHand(): void {
+    if (!this.rightHandBone || this.sword) return;
+
+    const sword = this.createSwordMesh();
+    sword.name = 'PlayerSword';
+    sword.position.set(0.025, 0.03, -0.02);
+    sword.rotation.set(Math.PI / 2, 0, -Math.PI / 2);
+    this.rightHandBone.add(sword);
+    this.sword = sword;
+  }
+
+  private createSwordMesh(): THREE.Group {
+    const sword = new THREE.Group();
+
+    const steel = new THREE.MeshStandardMaterial({
+      color: 0xcfd6df,
+      metalness: 0.95,
+      roughness: 0.18,
+    });
+    const guardMaterial = new THREE.MeshStandardMaterial({
+      color: 0x8b7c62,
+      metalness: 0.7,
+      roughness: 0.35,
+    });
+    const gripMaterial = new THREE.MeshStandardMaterial({
+      color: 0x3a2e22,
+      roughness: 0.85,
+      metalness: 0.08,
+    });
+
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.92, 0.02), steel);
+    blade.position.y = 0.56;
+
+    const bladeTip = new THREE.Mesh(
+      new THREE.ConeGeometry(0.022, 0.09, 6),
+      steel
+    );
+    bladeTip.position.y = 1.065;
+
+    const guard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.035, 0.04),
+      guardMaterial
+    );
+    guard.position.y = 0.1;
+
+    const grip = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02, 0.025, 0.22, 12),
+      gripMaterial
+    );
+    grip.position.y = -0.03;
+
+    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 10), guardMaterial);
+    pommel.position.y = -0.16;
+
+    sword.add(blade, bladeTip, guard, grip, pommel);
+    sword.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+      }
+    });
+
+    return sword;
+  }
+
   playAnimation(
     name: string,
     options?: {
@@ -158,57 +261,35 @@ export class CharacterModel {
   ): void {
     if (!this.mixer) return;
 
-    // 게임 상태 이름 -> 실제 애니메이션 이름 변환
-    const animName = this.animationMapping[name as keyof AnimationMapping] ?? name;
+    const mappedName = this.resolveMappedAnimationName(name);
+    let action = this.findAction(mappedName);
 
-    // 액션 찾기
-    let action = this.actions.get(animName);
+    const startedProcedural = !action && this.tryStartProceduralMotion(name);
 
-    // 이름이 정확히 일치하지 않으면 부분 매칭 시도
     if (!action) {
-      for (const [key, act] of this.actions) {
-        if (key.toLowerCase().includes(animName.toLowerCase())) {
-          action = act;
-          break;
-        }
+      const fallback = this.getFallbackAnimation(mappedName);
+      if (fallback) {
+        action = this.findAction(fallback);
       }
     }
 
     if (!action) {
-      // 폴백 처리: Walk_Back -> Walk, 기타 누락 애니메이션 처리
-      const fallbacks: Record<string, string> = {
-        'Walk_Back': 'Walk',
-        'Sprint': 'Run',
-        'Backstep': 'Roll',
-      };
-
-      const fallbackName = fallbacks[animName];
-      if (fallbackName) {
-        action = this.actions.get(fallbackName);
-        if (!action) {
-          for (const [key, act] of this.actions) {
-            if (key.toLowerCase().includes(fallbackName.toLowerCase())) {
-              action = act;
-              break;
-            }
-          }
-        }
+      if (!startedProcedural) {
+        console.warn(`[CharacterModel] Animation not found: ${mappedName}`);
       }
-
-      if (!action) {
-        console.warn(`[CharacterModel] Animation not found: ${animName}`);
-        return;
-      }
+      return;
     }
 
-    // 이전 애니메이션 페이드 아웃
-    const fadeTime = options?.fadeIn ?? 0.2;
+    if (!this.isProceduralRequest(name)) {
+      this.stopProceduralMotion();
+    }
+
+    const fadeTime = options?.fadeIn ?? 0.15;
 
     if (this.currentAction && this.currentAction !== action) {
       this.currentAction.fadeOut(options?.fadeOut ?? fadeTime);
     }
 
-    // 새 애니메이션 설정
     action.reset();
     action.setLoop(
       options?.loop ? THREE.LoopRepeat : THREE.LoopOnce,
@@ -222,59 +303,318 @@ export class CharacterModel {
     this.currentAction = action;
   }
 
-  /**
-   * 애니메이션 업데이트
-   */
+  private resolveMappedAnimationName(requestedName: string): string {
+    const key = this.toAnimationKey(requestedName);
+    if (!key) return requestedName;
+    return this.animationMapping[key] ?? requestedName;
+  }
+
+  private toAnimationKey(name: string): AnimationKey | null {
+    const lower = name.toLowerCase();
+
+    if (lower === 'idle') return 'idle';
+    if (lower === 'walk' || lower === 'walk_back') return 'walk';
+    if (lower === 'run') return 'run';
+    if (lower === 'sprint') return 'sprint';
+    if (lower === 'roll') return 'roll';
+    if (lower === 'backstep') return 'backstep';
+    if (lower.startsWith('attack_light')) return 'attack_light';
+    if (lower === 'attack_heavy') return 'attack_heavy';
+    if (lower === 'guard_idle' || lower === 'guard') return 'guard';
+    if (lower === 'hit_react' || lower === 'hit') return 'hit_stun';
+    if (lower === 'death') return 'death';
+    if (lower === 'fall') return 'falling';
+    if (lower === 'land') return 'landing';
+    if (lower === 'use_item') return 'use_item';
+
+    return null;
+  }
+
+  private findAction(name: string): THREE.AnimationAction | null {
+    const exact = this.actions.get(name);
+    if (exact) return exact;
+
+    const lower = name.toLowerCase();
+    for (const [clipName, action] of this.actions) {
+      const clipLower = clipName.toLowerCase();
+      if (
+        clipLower === lower ||
+        clipLower.includes(lower) ||
+        lower.includes(clipLower)
+      ) {
+        return action;
+      }
+    }
+
+    return null;
+  }
+
+  private getFallbackAnimation(name: string): string | null {
+    const fallbackMap: Record<string, string> = {
+      Walk_Back: 'Walk',
+      Sprint: 'Run',
+      Fall: 'Idle',
+      Land: 'Idle',
+    };
+    return fallbackMap[name] ?? null;
+  }
+
+  private isProceduralRequest(name: string): boolean {
+    return this.toProceduralMotion(name) !== 'none';
+  }
+
+  private tryStartProceduralMotion(name: string): boolean {
+    const type = this.toProceduralMotion(name);
+    if (type === 'none') return false;
+
+    this.proceduralMotion = {
+      type,
+      time: 0,
+      duration: PROCEDURAL_DURATIONS[type],
+      loop: type === 'guard',
+    };
+
+    return true;
+  }
+
+  private toProceduralMotion(name: string): ProceduralMotionType {
+    const lower = name.toLowerCase();
+    if (lower.startsWith('attack_light')) return 'attackLight';
+    if (lower === 'attack_heavy') return 'attackHeavy';
+    if (lower === 'roll') return 'roll';
+    if (lower === 'backstep') return 'backstep';
+    if (lower === 'guard_idle' || lower === 'guard') return 'guard';
+    if (lower === 'hit_react' || lower === 'hit') return 'hitStun';
+    return 'none';
+  }
+
+  private stopProceduralMotion(): void {
+    this.proceduralMotion = {
+      type: 'none',
+      time: 0,
+      duration: 0,
+      loop: false,
+    };
+    this.setModelPitch(0);
+  }
+
   update(dt: number): void {
     if (this.mixer) {
       this.mixer.update(dt);
     }
+
+    this.updateProceduralMotion(dt);
   }
 
-  /**
-   * 3D Object 반환
-   */
+  private updateProceduralMotion(dt: number): void {
+    if (this.proceduralMotion.type === 'none') {
+      this.setModelPitch(0);
+      return;
+    }
+
+    this.proceduralMotion.time += dt;
+
+    const progress = this.proceduralMotion.loop
+      ? (this.proceduralMotion.time % this.proceduralMotion.duration) /
+        this.proceduralMotion.duration
+      : THREE.MathUtils.clamp(
+          this.proceduralMotion.time / this.proceduralMotion.duration,
+          0,
+          1
+        );
+
+    const blendInOut = this.proceduralMotion.loop
+      ? 1
+      : Math.min(1, progress / 0.2, (1 - progress) / 0.2);
+
+    this.applyProceduralPose(this.proceduralMotion.type, progress, blendInOut);
+
+    if (
+      !this.proceduralMotion.loop &&
+      this.proceduralMotion.time >= this.proceduralMotion.duration
+    ) {
+      this.stopProceduralMotion();
+    }
+  }
+
+  private applyProceduralPose(
+    type: Exclude<ProceduralMotionType, 'none'>,
+    progress: number,
+    weight: number
+  ): void {
+    this.setModelPitch(0);
+
+    switch (type) {
+      case 'attackLight': {
+        const swing = this.computeSwing(progress, 0.32, 0.78);
+        this.applyBoneRotation(this.spineBone, 0, 0.3 * swing, 0.08 * swing, weight);
+        this.applyBoneRotation(
+          this.rightArmBone,
+          -0.35 + 0.8 * swing,
+          -0.2 * swing,
+          -0.2 * swing,
+          weight
+        );
+        this.applyBoneRotation(
+          this.rightForeArmBone,
+          -0.75 + 1.15 * swing,
+          0,
+          0.1 * swing,
+          weight
+        );
+        this.applyBoneRotation(
+          this.rightHandBone,
+          -0.2 + 0.45 * swing,
+          0,
+          0.08 * swing,
+          weight
+        );
+        this.applyBoneRotation(this.leftArmBone, 0.12, 0, 0.18, weight * 0.6);
+        break;
+      }
+
+      case 'attackHeavy': {
+        const swing = this.computeSwing(progress, 0.4, 0.9);
+        const windup = Math.sin(progress * Math.PI);
+        this.setModelPitch(-0.08 * windup * weight);
+        this.applyBoneRotation(this.spineBone, -0.15 * windup, 0.45 * swing, 0, weight);
+        this.applyBoneRotation(
+          this.rightArmBone,
+          -0.6 + 1.2 * swing,
+          -0.25 * swing,
+          -0.3 * swing,
+          weight
+        );
+        this.applyBoneRotation(
+          this.rightForeArmBone,
+          -1.0 + 1.6 * swing,
+          0,
+          0.2 * swing,
+          weight
+        );
+        this.applyBoneRotation(
+          this.rightHandBone,
+          -0.35 + 0.6 * swing,
+          0,
+          0.1 * swing,
+          weight
+        );
+        this.applyBoneRotation(this.leftArmBone, 0.2, 0.05, 0.28, weight * 0.75);
+        break;
+      }
+
+      case 'roll': {
+        const tuck = Math.sin(progress * Math.PI);
+        const spin = progress * Math.PI * 2;
+        this.setModelPitch(spin * weight);
+        this.applyBoneRotation(this.spineBone, -0.7 * tuck, 0, 0, weight);
+        this.applyBoneRotation(this.rightArmBone, -1.1 * tuck, 0.2, -0.1, weight);
+        this.applyBoneRotation(this.leftArmBone, -1.0 * tuck, -0.15, 0.1, weight);
+        this.applyBoneRotation(this.rightForeArmBone, -0.7 * tuck, 0, 0, weight);
+        break;
+      }
+
+      case 'backstep': {
+        const recoil = Math.sin(progress * Math.PI);
+        this.setModelPitch(-0.28 * recoil * weight);
+        this.applyBoneRotation(this.spineBone, -0.25 * recoil, 0, 0, weight);
+        this.applyBoneRotation(this.rightArmBone, -0.35 * recoil, 0.05, 0, weight);
+        this.applyBoneRotation(this.leftArmBone, -0.25 * recoil, -0.05, 0, weight);
+        break;
+      }
+
+      case 'guard': {
+        const guardPulse = 0.8 + 0.2 * Math.sin(progress * Math.PI * 2);
+        this.applyBoneRotation(this.spineBone, 0.04, 0.1, 0, weight * guardPulse);
+        this.applyBoneRotation(this.rightArmBone, -0.75, -0.18, -0.2, weight);
+        this.applyBoneRotation(this.rightForeArmBone, -0.55, 0.1, 0, weight);
+        this.applyBoneRotation(this.leftArmBone, 0.25, 0.1, 0.2, weight * 0.6);
+        break;
+      }
+
+      case 'hitStun': {
+        const recoil = Math.sin(progress * Math.PI);
+        this.setModelPitch(-0.2 * recoil * weight);
+        this.applyBoneRotation(this.spineBone, -0.4 * recoil, -0.1 * recoil, 0, weight);
+        this.applyBoneRotation(this.rightArmBone, 0.2 * recoil, 0, 0.1 * recoil, weight);
+        this.applyBoneRotation(this.leftArmBone, 0.2 * recoil, 0, -0.1 * recoil, weight);
+        break;
+      }
+    }
+  }
+
+  private computeSwing(progress: number, windupEnd: number, recoverStart: number): number {
+    if (progress < windupEnd) {
+      return THREE.MathUtils.lerp(0, -1, progress / windupEnd);
+    }
+
+    if (progress < recoverStart) {
+      return THREE.MathUtils.lerp(-1, 1, (progress - windupEnd) / (recoverStart - windupEnd));
+    }
+
+    return THREE.MathUtils.lerp(1, 0, (progress - recoverStart) / (1 - recoverStart));
+  }
+
+  private applyBoneRotation(
+    bone: THREE.Bone | null,
+    x: number,
+    y: number,
+    z: number,
+    weight: number
+  ): void {
+    if (!bone || weight <= 0) return;
+    this.tempEuler.set(x * weight, y * weight, z * weight, 'XYZ');
+    this.tempQuat.setFromEuler(this.tempEuler);
+    bone.quaternion.multiply(this.tempQuat);
+  }
+
+  private setModelPitch(pitchOffset: number): void {
+    if (!this.model) return;
+    this.model.scene.rotation.x = this.modelBasePitch + pitchOffset;
+  }
+
   getObject(): THREE.Group {
     return this.root;
   }
 
-  /**
-   * 로드 완료 여부
-   */
   isLoaded(): boolean {
     return this.loaded;
   }
 
-  /**
-   * 사용 가능한 애니메이션 목록
-   */
   getAvailableAnimations(): string[] {
     return Array.from(this.actions.keys());
   }
 
-  /**
-   * 위치 설정
-   */
   setPosition(position: THREE.Vector3): void {
     this.root.position.copy(position);
   }
 
-  /**
-   * 회전 설정
-   */
   setRotation(quaternion: THREE.Quaternion): void {
     this.root.quaternion.copy(quaternion);
   }
 
-  /**
-   * 리소스 정리
-   */
   dispose(): void {
     if (this.mixer) {
       this.mixer.stopAllAction();
     }
 
-    // 모델에서 자식 제거
+    if (this.sword) {
+      this.sword.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry.dispose();
+          if (Array.isArray(obj.material)) {
+            for (const mat of obj.material) {
+              mat.dispose();
+            }
+          } else {
+            obj.material.dispose();
+          }
+        }
+      });
+      this.sword.removeFromParent();
+      this.sword = null;
+    }
+
     while (this.root.children.length > 0) {
       this.root.remove(this.root.children[0]);
     }
@@ -283,37 +623,41 @@ export class CharacterModel {
     this.model = null;
     this.mixer = null;
     this.loaded = false;
+    this.proceduralMotion = {
+      type: 'none',
+      time: 0,
+      duration: 0,
+      loop: false,
+    };
   }
 }
 
-/**
- * 프리셋: 다크소울 스타일 기사 모델 설정
- */
 export const KNIGHT_MODEL_PRESETS = {
-  // Three.js Soldier - 기본 애니메이션 캐릭터
   solus: {
     modelPath: '/assets/models/solus_knight.glb',
     scale: 1.0,
-    heightOffset: -0.9, // 캡슐 콜라이더 높이에 맞춤
+    heightOffset: -0.9,
     animationMapping: {
       idle: 'Idle',
       walk: 'Walk',
       run: 'Run',
       sprint: 'Run',
-      roll: 'Run', // Soldier에는 Roll이 없어서 Run으로 대체
-      backstep: 'Walk',
-      attack_light: 'Idle', // 공격 애니메이션 없음
-      attack_heavy: 'Idle',
-      attack_combo_1: 'Idle',
-      attack_combo_2: 'Idle',
-      attack_combo_3: 'Idle',
-      guard: 'Idle',
-      hit_stun: 'Idle',
-      death: 'Idle',
+      roll: 'Roll',
+      backstep: 'Backstep',
+      attack_light: 'Attack_Light_1',
+      attack_heavy: 'Attack_Heavy',
+      attack_combo_1: 'Attack_Light_1',
+      attack_combo_2: 'Attack_Light_2',
+      attack_combo_3: 'Attack_Light_3',
+      guard: 'Guard_Idle',
+      hit_stun: 'Hit_React',
+      death: 'Death',
+      falling: 'Fall',
+      landing: 'Land',
+      use_item: 'Use_Item',
     },
   },
 
-  // Quaternius Knight - CC0 기사 모델
   quaternius: {
     modelPath: '/assets/models/knight_quaternius.glb',
     scale: 0.5,
@@ -326,14 +670,13 @@ export const KNIGHT_MODEL_PRESETS = {
       roll: 'Roll',
       backstep: 'WalkingBackwards',
       attack_light: 'Sword_Slash',
-      attack_heavy: 'Sword_Slash',
+      attack_heavy: 'Sword_Slash_Heavy',
       guard: 'Blocking',
       hit_stun: 'Getting_Hit',
       death: 'Dying',
     },
   },
 
-  // Mixamo Character (일반적인 Mixamo 리깅)
   mixamo: {
     modelPath: '/assets/models/character.glb',
     scale: 0.01,
