@@ -413,7 +413,8 @@ export class PlayerFSM {
       case PlayerStateType.GuardBreak:
       case PlayerStateType.Landing:
       case PlayerStateType.PlungeAttack:
-        this.tryTransition(PlayerStateType.Idle);
+        // Timed states must always complete even if they are non-interruptible.
+        this.forceTransition(PlayerStateType.Idle);
         break;
     }
   }

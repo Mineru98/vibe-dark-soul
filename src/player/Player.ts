@@ -259,8 +259,8 @@ export class Player {
     }
   }
 
-  private handleConsumeStamina(amount: number): void {
-    this.stats.consumeStamina(amount);
+  private handleConsumeStamina(amount: number): boolean {
+    return this.stats.tryConsumeStamina(amount);
   }
 
   // ========== Combat Interface ==========
