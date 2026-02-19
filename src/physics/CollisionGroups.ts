@@ -48,6 +48,26 @@ export function createCollisionGroups(
  */
 export const CollisionGroups = {
   /**
+   * Create collision groups from membership and filter arrays
+   * @param membership Array of collision group bits for membership
+   * @param filter Array of collision group bits for filter
+   */
+  create(membership: number[], filter: number[]): number {
+    const membershipBits = membership.reduce((acc, bit) => acc | bit, 0);
+    const filterBits = filter.reduce((acc, bit) => acc | bit, 0);
+    return createCollisionGroups(membershipBits, filterBits);
+  },
+
+  /**
+   * Create filter for raycasts/queries
+   * @param membership Membership bits
+   * @param filter Filter bits
+   */
+  createFilter(membership: number, filter: number): number {
+    return createCollisionGroups(membership, filter);
+  },
+
+  /**
    * Player character
    * - Collides with: environment, enemies, triggers, items
    * - Does NOT collide with: own hitboxes
