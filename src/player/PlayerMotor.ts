@@ -158,10 +158,10 @@ export class PlayerMotor {
     const sin = Math.sin(cameraYaw);
     const cos = Math.cos(cameraYaw);
 
-    // Forward is -Z, right is +X
-    // inputY > 0 = forward, inputX > 0 = right
-    const worldX = inputX * cos - inputY * sin;
-    const worldZ = inputX * sin + inputY * cos;
+    // right * inputX + forward * inputY
+    // right=(cos, -sin), forward=(sin, cos) on XZ plane
+    const worldX = inputX * cos + inputY * sin;
+    const worldZ = -inputX * sin + inputY * cos;
 
     this._inputDirection.set(worldX, 0, worldZ).normalize();
 

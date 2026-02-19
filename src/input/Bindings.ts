@@ -173,7 +173,7 @@ export const DEFAULT_BINDINGS: BindingsConfig = {
     [Axis.MoveY]: {
       keys: { positive: ['KeyW', 'ArrowUp'], negative: ['KeyS', 'ArrowDown'] },
       gamepadAxis: GamepadAxis.LeftStickY,
-      inverted: true, // Forward is negative on gamepad
+      inverted: false,
     },
     [Axis.LookX]: {
       mouseDelta: 'x',

@@ -423,8 +423,18 @@ class InputManagerClass {
 
       // Gamepad axis (overwrites if available)
       if (this.gamepad && binding.gamepadAxis !== undefined) {
-        const gpValue = this.gamepadAxes[binding.gamepadAxis] ?? 0;
+        let gpValue = this.gamepadAxes[binding.gamepadAxis] ?? 0;
         const deadzone = this.bindings.settings.gamepadDeadzone;
+
+        // Standard gamepad convention: stick up is -1.
+        // Normalize to positive forward for gameplay movement.
+        if (axis === Axis.MoveY) {
+          gpValue = -gpValue;
+        }
+
+        if (axis === Axis.LookY && this.bindings.settings.invertGamepadY) {
+          gpValue = -gpValue;
+        }
 
         if (Math.abs(gpValue) > deadzone) {
           // Apply deadzone remapping
