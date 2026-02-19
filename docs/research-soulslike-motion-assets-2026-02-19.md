@@ -1,71 +1,90 @@
-# Soulslike 모션/에셋 리서치 (2026-02-19)
+﻿# Soulslike 모션/에셋 리서치 (2026-02-19)
 
-## 목적
-- 현재 프로젝트를 다크소울 스타일에 더 가깝게 만들기 위해
-  - 전투 모션(회피/약공/강공/가드) 품질 개선
-  - 무기/캐릭터 에셋 확보
-  - 실제 적용 가능한 구현 파이프라인 정리
+## 1. 목적
+현재 프로젝트를 "다크 소울 풍" 전투 템포/모션 감각에 더 가깝게 만들기 위한 구현 가능한 기준을 정리한다.
 
-참고:
-- 전용 서브에이전트 실행 도구는 현재 세션에서 제공되지 않아, 별도 리서치 트랙으로 문서화함.
+핵심 질문:
+1. 현재 코드/에셋에서 무엇이 부족한가?
+2. 즉시 가능한 개선과 중기 개선을 어떻게 나눌 것인가?
+3. 에셋 소싱 시 라이선스 리스크는 무엇인가?
 
-## 핵심 조사 결과
-1. 현재 소스 에셋 상태
-- 프로젝트 내 기본 기사 모델은 공격/구르기 전용 애니메이션이 부족함.
-- 즉, 코드만으로 완전한 다크소울형 모션을 만들기에는 한계가 있고, 추가 모션 클립이 필요함.
+---
 
-2. 구현 기술 적합성
-- Three.js 애니메이션 시스템은 `AnimationMixer`, `AnimationAction` 기반 블렌딩과 전환에 적합.
-- Rapier JavaScript Character Controller는 이동 충돌 처리용이며, 루트모션/모션 품질은 별도 애니메이션 시스템에서 해결해야 함.
+## 2. 현재 상태 진단
 
-3. 에셋 소스/라이선스 관점
-- Quaternius 계열은 게임 프로토타입에 유리한 무료 리소스를 제공.
-- Kenney는 CC0 정책을 명시.
-- Mixamo는 FAQ 기준으로 상업적 사용 가능 방향의 안내가 있으나, 배포 형태(원본 재배포 금지 등)는 최종 정책 문구 재확인이 필요.
-- Sketchfab은 모델별 라이선스가 다르므로 개별 확인이 필수.
+### 2-1. 애니메이션 클립 현황
+실측(로딩 로그 기준):
+- `solus_knight.glb` 내 확인된 클립: `Idle`, `Run`, `TPose`, `Walk`
 
-## 권장 구현 로드맵
-### 1단계 (즉시 적용, 1~2일)
-- 현재 반영한 절차적 모션(공격/회피/가드)을 유지
-- 입력/FSM/스태미나/상태복귀 안정성 우선
-- 무기 본 장착과 충돌 타이밍(히트윈도우) 정합성 점검
+부족한 핵심 전투 클립:
+- `Roll`, `Backstep`, `Attack_Light_1~3`, `Attack_Heavy`, `Guard`, `Hit_React`
 
-### 2단계 (중기, 2~4일)
-- 공격/롤/피격 전용 클립을 포함한 기사 리그로 교체
-- 상태별 애니메이션 블렌드 트리 정리:
-  - `Idle/Walk/Run`
-  - `Backstep/Roll`
-  - `AttackLightCombo1~3`
-  - `AttackHeavy`
-  - `Guard/GuardHit/HitReact`
-- 상태 종료 시점을 모션 시간 기반으로 통일(현재처럼 duration + FSM 강제복귀 유지)
+결론:
+- 전투 모션 상당 부분을 절차형(procedural) 보정으로 보완해야 하며,
+- 장기적으로는 전투 클립이 포함된 리그/애니메이션 세트가 필요.
 
-### 3단계 (완성도, 3~7일)
-- 무기 트레일, 타격 리액션(카메라/사운드), 피격 방향별 애드립 모션 추가
-- 루트모션 사용 여부를 상태별로 분리:
-  - 회피/강공은 루트모션 또는 루트모션 유사 보정
-  - 보행/질주는 물리 모터 주도
+부족 에셋 체크리스트:
+- humanoid 기사형 캐릭터 + 전투 애니메이션 세트
+- 검/방패 무기 세트(리깅 호환)
+- 타격/회피/가드 SFX
+- 공격 궤적/히트 스파크 VFX
+- 환경 보강 리소스(favicon, 실제 fire loop 오디오)
 
-## 부족 에셋 체크리스트
-- 필수:
-  - 기사형 캐릭터 + 전투 애니메이션 세트(롤/백스텝/약공/강공/가드/피격/사망)
-  - 검/방패 실모델(저해상도 LOD 포함)
-- 권장:
-  - 공격 궤적 VFX
-  - 타격/회피/가드 SFX
-  - 피격 파티클/디칼
+---
 
-## 적용 시 주의사항
-- 동일 스켈레톤/본 네이밍 체계를 유지해야 리타겟 비용이 크게 줄어듦.
-- 에셋 라이선스는 “소스별, 파일별”로 문서화해야 나중에 배포 리스크를 줄일 수 있음.
-- Mixamo/Sketchfab 계열은 최종 배포 전에 정책 최신 문구를 다시 확인해야 함.
+## 3. 구현 전략 (실행 가능 순서)
 
-## 참고 출처
+### 3-1. 1단계: 코드 기반 감각 보정 (즉시)
+적용 완료/적용 가능 항목:
+- 카메라 상대 이동 축 정확화
+- 롤/백스텝 속도 곡선(초반 버스트, 후반 감속)
+- 공격 런지(root-motion 유사) 추가
+- 절차형 공격 모션(콤보 단계별 포즈 차등)
+
+장점:
+- 에셋 추가 없이 즉시 체감 개선 가능
+- 입력/FSM/스태미나/피격 판정과 빠르게 결합 가능
+
+한계:
+- 원본 모캡/핸드키 애니메이션 대비 디테일, 체중감, 관절 자연스러움 한계
+
+### 3-2. 2단계: 전투 애니메이션 세트 도입 (중기)
+권장 세트(최소 구성):
+- locomotion: `idle/walk/run`
+- dodge: `roll/backstep`
+- attack: `light combo(3)`, `heavy`
+- defense/hit: `guard`, `guard hit`, `hit react`
+
+적용 방식:
+- 우선 humanoid 리그/본 네이밍 정규화
+- `AnimationMixer`에서 상태 전환 블렌딩(짧은 fade) 구성
+- 루트모션은 상태별 선택 적용(회피/강공격 중심)
+
+---
+
+## 4. 에셋 라이선스/소싱 체크포인트
+
+### 4-1. 실무 체크리스트
+- 모델/애니메이션 다운로드 URL과 라이선스 문구를 프로젝트 문서에 같이 보존
+- 상업 사용/2차 배포/원본 재배포 금지 조항 확인
+- 동일 모델이라도 사이트별 라이선스가 다를 수 있으므로 원문 확인 필수
+
+### 4-2. 참고 링크
 - Three.js Animation System: https://threejs.org/docs/#manual/en/introduction/Animation-system
 - Three.js AnimationMixer: https://threejs.org/docs/pages/AnimationMixer.html
-- Three.js AnimationAction: https://threejs.org/docs/pages/AnimationAction.html
-- Rapier JS Character Controller: https://rapier.rs/docs/user_guides/javascript/character_controller/
+- Rapier Character Controller(JS): https://rapier.rs/docs/user_guides/javascript/character_controller/
+- Mixamo FAQ: https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html
 - Quaternius Knight Character Pack: https://quaternius.com/packs/knightcharacter.html
-- Kenney License (CC0): https://kenney.nl/license
-- Mixamo FAQ (Adobe): https://helpx.adobe.com/kr/creative-cloud/faq/mixamo-faq.html
+- Kenney License(CC0): https://kenney.nl/license
 - Sketchfab Licenses: https://sketchfab.com/licenses
+
+---
+
+## 5. 프로젝트 적용 결론
+
+현재 프로젝트는 다음 접근이 최적:
+1. 단기: 절차형 모션 + 루트모션 보정으로 소울라이크 템포 확보
+2. 중기: 전투 클립이 포함된 통합 리그 에셋으로 교체
+3. 장기: 타격 VFX/SFX/카메라 쉐이크/히트스톱 등 전투 연출 계층 추가
+
+이번 수정에서 1단계는 즉시 반영했으며, 2단계(에셋 교체) 준비를 위해 별도 백그라운드 리서치 문서를 추가한다.
