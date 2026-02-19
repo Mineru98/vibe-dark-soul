@@ -144,6 +144,7 @@ class GameAppClass {
 
     // Load level
     const scene = getScene();
+    this.removeTitleGroundOverlays(scene);
     await LevelLoader.load(TUTORIAL_LEVEL, scene);
 
     // Get spawn position
@@ -299,6 +300,32 @@ class GameAppClass {
     }
 
     return this.boss.id;
+  }
+
+  /**
+   * Remove title-scene ground overlays that overlap level geometry.
+   * This avoids z-fighting shimmer after entering gameplay.
+   */
+  private removeTitleGroundOverlays(scene: THREE.Scene): void {
+    const removableNames = ['titleGround', 'titleFogPlane'];
+
+    for (const name of removableNames) {
+      const obj = scene.getObjectByName(name);
+      if (!obj) continue;
+
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry.dispose();
+        if (Array.isArray(obj.material)) {
+          for (const mat of obj.material) {
+            mat.dispose();
+          }
+        } else {
+          obj.material.dispose();
+        }
+      }
+
+      obj.parent?.remove(obj);
+    }
   }
 
   /**
