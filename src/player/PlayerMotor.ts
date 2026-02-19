@@ -92,6 +92,9 @@ export class PlayerMotor {
   private _rollDirection: THREE.Vector3 = new THREE.Vector3();
   private _isRolling: boolean = false;
 
+  // 뒤로 이동 상태
+  private _isMovingBackward: boolean = false;
+
   constructor(config: PlayerMotorConfig) {
     this.config = { ...DEFAULT_CONFIG, ...config } as Required<PlayerMotorConfig>;
 
@@ -147,6 +150,7 @@ export class PlayerMotor {
   setInputFromCamera(inputX: number, inputY: number, cameraYaw: number): void {
     if (Math.abs(inputX) < 0.01 && Math.abs(inputY) < 0.01) {
       this._inputDirection.set(0, 0, 0);
+      this._isMovingBackward = false;
       return;
     }
 
@@ -160,7 +164,16 @@ export class PlayerMotor {
     const worldZ = inputX * sin + inputY * cos;
 
     this._inputDirection.set(worldX, 0, worldZ).normalize();
-    this._targetYaw = Math.atan2(worldX, worldZ);
+
+    // S키만 눌렀을 때 (뒤로만 이동) - 캐릭터가 회전하지 않고 뒤로 이동
+    if (inputY < -0.1 && Math.abs(inputX) < 0.1) {
+      this._isMovingBackward = true;
+      // 카메라 방향을 바라보며 뒤로 이동 (회전하지 않음)
+      this._targetYaw = cameraYaw + Math.PI; // 카메라 반대 방향 (카메라를 바라봄)
+    } else {
+      this._isMovingBackward = false;
+      this._targetYaw = Math.atan2(worldX, worldZ);
+    }
   }
 
   /**
@@ -394,6 +407,13 @@ export class PlayerMotor {
    */
   get grounded(): boolean {
     return this.kcc.grounded;
+  }
+
+  /**
+   * Check if moving backward (S키만 눌렀을 때)
+   */
+  get isMovingBackward(): boolean {
+    return this._isMovingBackward;
   }
 
   /**

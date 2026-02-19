@@ -72,6 +72,12 @@ const STATE_CONFIGS: Record<PlayerStateType, StateConfig> = {
     staminaCost: 0,
     movementMultiplier: 0.5,
   },
+  [PlayerStateType.WalkBack]: {
+    duration: 0,
+    canBeInterrupted: true,
+    staminaCost: 0,
+    movementMultiplier: 0.4, // 뒤로 걷기는 더 느림
+  },
   [PlayerStateType.Run]: {
     duration: 0,
     canBeInterrupted: true,
@@ -206,6 +212,9 @@ export interface FSMCallbacks {
   getStamina?: () => number;
 }
 
+// Alias for backwards compatibility
+export type PlayerFSMCallbacks = FSMCallbacks;
+
 interface AnimationOptions {
   loop?: boolean;
   speed?: number;
@@ -240,6 +249,9 @@ export class PlayerFSM {
 
   // Hit window state (for attack system)
   private _inHitWindow: boolean = false;
+
+  // 뒤로 이동 플래그
+  private _isMovingBackward: boolean = false;
 
   constructor(callbacks?: FSMCallbacks) {
     if (callbacks) {
@@ -483,8 +495,14 @@ export class PlayerFSM {
 
     if (MOVEMENT_STATES.has(this._currentState)) {
       if (hasMovement) {
+        // 뒤로만 이동 시 (S키만 눌렀을 때) WalkBack 상태로 전환
+        if (this._isMovingBackward) {
+          if (this._currentState !== PlayerStateType.WalkBack) {
+            this.tryTransition(PlayerStateType.WalkBack);
+          }
+        }
         // Check for sprint
-        if (
+        else if (
           InputManager.isPressed(Action.Roll) &&
           InputManager.getHeldTime(Action.Roll) > 0.15
         ) {
@@ -498,7 +516,8 @@ export class PlayerFSM {
           this.tryTransition(PlayerStateType.Run);
         } else if (
           this._currentState === PlayerStateType.Idle ||
-          this._currentState === PlayerStateType.Walk
+          this._currentState === PlayerStateType.Walk ||
+          this._currentState === PlayerStateType.WalkBack
         ) {
           this.tryTransition(PlayerStateType.Run);
         }
@@ -733,5 +752,80 @@ export class PlayerFSM {
       return `Attack_Light_${this.comboCount + 1}`;
     }
     return STATE_ANIMATIONS[state];
+  }
+
+  // ========== External Control Methods ==========
+
+  /**
+   * Set movement input (for external control)
+   * Movement state transitions are handled internally via InputManager
+   */
+  setMovementInput(_x: number, _y: number, _isSprinting: boolean): void {
+    // Movement transitions are handled in checkInputTransitions via InputManager
+    // This method exists for API compatibility
+  }
+
+  /**
+   * Set moving backward state (S키만 눌렀을 때)
+   */
+  setMovingBackward(isBackward: boolean): void {
+    this._isMovingBackward = isBackward;
+  }
+
+  /**
+   * Set guard held state (for external control)
+   * Guard transitions are handled internally via InputManager
+   */
+  setGuardHeld(_held: boolean): void {
+    // Guard transitions are handled in checkInputTransitions via InputManager
+    // This method exists for API compatibility
+  }
+
+  /**
+   * Set airborne state
+   */
+  setAirborne(airborne: boolean): void {
+    this.onGroundingChanged(!airborne);
+  }
+
+  /**
+   * Force state transition (alias for forceTransition)
+   */
+  forceState(state: PlayerStateType): void {
+    this.forceTransition(state);
+  }
+
+  /**
+   * Try to use item
+   */
+  tryUseItem(): boolean {
+    if (this._currentState === PlayerStateType.Idle) {
+      return this.tryTransition(PlayerStateType.UsingItem);
+    }
+    return false;
+  }
+
+  /**
+   * Try to interact
+   */
+  tryInteract(): boolean {
+    if (this._currentState === PlayerStateType.Idle) {
+      return this.tryTransition(PlayerStateType.Interacting);
+    }
+    return false;
+  }
+
+  /**
+   * Reset FSM to initial state
+   */
+  reset(): void {
+    this._currentState = PlayerStateType.Idle;
+    this._previousState = PlayerStateType.Idle;
+    this.stateStartTime = 0;
+    this.stateProgress = 0;
+    this.comboCount = 0;
+    this.inputBuffer = [];
+    this._hasIFrames = false;
+    this._inHitWindow = false;
   }
 }

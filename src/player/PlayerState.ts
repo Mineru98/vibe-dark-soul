@@ -18,6 +18,7 @@ export enum PlayerStateType {
   // Grounded states
   Idle = 'Idle',
   Walk = 'Walk',
+  WalkBack = 'WalkBack', // 뒤로 걷기
   Run = 'Run',
   Sprint = 'Sprint',
   Roll = 'Roll',
@@ -46,6 +47,7 @@ export enum PlayerStateType {
 export const STATE_GROUPS: Record<PlayerStateType, PlayerStateGroup> = {
   [PlayerStateType.Idle]: PlayerStateGroup.Grounded,
   [PlayerStateType.Walk]: PlayerStateGroup.Grounded,
+  [PlayerStateType.WalkBack]: PlayerStateGroup.Grounded,
   [PlayerStateType.Run]: PlayerStateGroup.Grounded,
   [PlayerStateType.Sprint]: PlayerStateGroup.Grounded,
   [PlayerStateType.Roll]: PlayerStateGroup.Grounded,
@@ -77,6 +79,7 @@ export function isInGroup(state: PlayerStateType, group: PlayerStateGroup): bool
 export const MOVEMENT_STATES: Set<PlayerStateType> = new Set([
   PlayerStateType.Idle,
   PlayerStateType.Walk,
+  PlayerStateType.WalkBack,
   PlayerStateType.Run,
   PlayerStateType.Sprint,
   PlayerStateType.Guard,
@@ -97,6 +100,7 @@ export const IFRAME_STATES: Set<PlayerStateType> = new Set([
 export const ROLL_CANCELABLE_STATES: Set<PlayerStateType> = new Set([
   PlayerStateType.Idle,
   PlayerStateType.Walk,
+  PlayerStateType.WalkBack,
   PlayerStateType.Run,
   PlayerStateType.Sprint,
   PlayerStateType.Guard,
@@ -117,6 +121,7 @@ export const ATTACK_CANCELABLE_STATES: Set<PlayerStateType> = new Set([
 export const STATE_ANIMATIONS: Record<PlayerStateType, string> = {
   [PlayerStateType.Idle]: 'Idle',
   [PlayerStateType.Walk]: 'Walk',
+  [PlayerStateType.WalkBack]: 'Walk_Back', // 뒤로 걷기 애니메이션
   [PlayerStateType.Run]: 'Run',
   [PlayerStateType.Sprint]: 'Sprint',
   [PlayerStateType.Roll]: 'Roll',

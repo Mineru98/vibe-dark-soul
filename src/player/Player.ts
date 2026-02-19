@@ -189,6 +189,9 @@ export class Player {
     // Feed movement to FSM
     this.fsm.setMovementInput(moveInput.x, moveInput.y, isSprinting);
 
+    // 뒤로 이동 상태 전달
+    this.fsm.setMovingBackward(this.motor.isMovingBackward);
+
     // Guard state
     this.fsm.setGuardHeld(InputManager.isPressed(Action.Block));
   }
