@@ -33,7 +33,9 @@ export interface CharacterModelConfig {
 type AnimationKey = keyof AnimationMapping;
 type ProceduralMotionType =
   | 'none'
-  | 'attackLight'
+  | 'attackLight1'
+  | 'attackLight2'
+  | 'attackLight3'
   | 'attackHeavy'
   | 'roll'
   | 'backstep'
@@ -72,9 +74,11 @@ const PROCEDURAL_DURATIONS: Record<
   Exclude<ProceduralMotionType, 'none'>,
   number
 > = {
-  attackLight: 0.42,
-  attackHeavy: 0.62,
-  roll: 0.75,
+  attackLight1: 0.44,
+  attackLight2: 0.48,
+  attackLight3: 0.52,
+  attackHeavy: 0.72,
+  roll: 0.62,
   backstep: 0.45,
   guard: 0.8,
   hitStun: 0.3,
@@ -379,7 +383,9 @@ export class CharacterModel {
 
   private toProceduralMotion(name: string): ProceduralMotionType {
     const lower = name.toLowerCase();
-    if (lower.startsWith('attack_light')) return 'attackLight';
+    if (lower === 'attack_light_2') return 'attackLight2';
+    if (lower === 'attack_light_3') return 'attackLight3';
+    if (lower.startsWith('attack_light')) return 'attackLight1';
     if (lower === 'attack_heavy') return 'attackHeavy';
     if (lower === 'roll') return 'roll';
     if (lower === 'backstep') return 'backstep';
@@ -445,81 +451,146 @@ export class CharacterModel {
     this.setModelPitch(0);
 
     switch (type) {
-      case 'attackLight': {
-        const swing = this.computeSwing(progress, 0.32, 0.78);
-        this.applyBoneRotation(this.spineBone, 0, 0.3 * swing, 0.08 * swing, weight);
+      case 'attackLight1': {
+        const swing = this.computeSwing(progress, 0.3, 0.78);
+        const torso = Math.sin(progress * Math.PI);
+        this.setModelPitch(-0.06 * torso * weight);
+        this.applyBoneRotation(this.spineBone, -0.05 * torso, 0.42 * swing, 0.12 * swing, weight);
         this.applyBoneRotation(
           this.rightArmBone,
-          -0.35 + 0.8 * swing,
-          -0.2 * swing,
-          -0.2 * swing,
-          weight
-        );
-        this.applyBoneRotation(
-          this.rightForeArmBone,
-          -0.75 + 1.15 * swing,
-          0,
-          0.1 * swing,
-          weight
-        );
-        this.applyBoneRotation(
-          this.rightHandBone,
-          -0.2 + 0.45 * swing,
-          0,
-          0.08 * swing,
-          weight
-        );
-        this.applyBoneRotation(this.leftArmBone, 0.12, 0, 0.18, weight * 0.6);
-        break;
-      }
-
-      case 'attackHeavy': {
-        const swing = this.computeSwing(progress, 0.4, 0.9);
-        const windup = Math.sin(progress * Math.PI);
-        this.setModelPitch(-0.08 * windup * weight);
-        this.applyBoneRotation(this.spineBone, -0.15 * windup, 0.45 * swing, 0, weight);
-        this.applyBoneRotation(
-          this.rightArmBone,
-          -0.6 + 1.2 * swing,
-          -0.25 * swing,
+          -0.45 + 1.05 * swing,
+          -0.28 * swing,
           -0.3 * swing,
           weight
         );
         this.applyBoneRotation(
           this.rightForeArmBone,
-          -1.0 + 1.6 * swing,
-          0,
-          0.2 * swing,
+          -0.9 + 1.35 * swing,
+          0.08 * swing,
+          0.18 * swing,
           weight
         );
         this.applyBoneRotation(
           this.rightHandBone,
-          -0.35 + 0.6 * swing,
-          0,
-          0.1 * swing,
+          -0.3 + 0.62 * swing,
+          0.06 * swing,
+          0.14 * swing,
           weight
         );
-        this.applyBoneRotation(this.leftArmBone, 0.2, 0.05, 0.28, weight * 0.75);
+        this.applyBoneRotation(this.leftArmBone, 0.2, 0.05, 0.24, weight * 0.72);
+        break;
+      }
+
+      case 'attackLight2': {
+        const swing = this.computeSwing(progress, 0.28, 0.74);
+        const body = Math.sin(progress * Math.PI);
+        this.setModelPitch(-0.05 * body * weight);
+        this.applyBoneRotation(this.spineBone, 0.02 * body, -0.38 * swing, -0.1 * swing, weight);
+        this.applyBoneRotation(
+          this.rightArmBone,
+          -0.4 + 0.95 * swing,
+          0.22 * swing,
+          0.28 * swing,
+          weight
+        );
+        this.applyBoneRotation(
+          this.rightForeArmBone,
+          -0.82 + 1.28 * swing,
+          -0.1 * swing,
+          -0.16 * swing,
+          weight
+        );
+        this.applyBoneRotation(
+          this.rightHandBone,
+          -0.28 + 0.58 * swing,
+          -0.08 * swing,
+          -0.12 * swing,
+          weight
+        );
+        this.applyBoneRotation(this.leftArmBone, 0.18, -0.08, -0.2, weight * 0.68);
+        break;
+      }
+
+      case 'attackLight3': {
+        const swing = this.computeSwing(progress, 0.4, 0.86);
+        const windup = Math.sin(progress * Math.PI);
+        this.setModelPitch(-0.12 * windup * weight);
+        this.applyBoneRotation(this.spineBone, -0.2 * windup, 0.24 * swing, 0.05 * swing, weight);
+        this.applyBoneRotation(
+          this.rightArmBone,
+          -0.95 + 1.48 * swing,
+          -0.18 * swing,
+          -0.26 * swing,
+          weight
+        );
+        this.applyBoneRotation(
+          this.rightForeArmBone,
+          -1.22 + 1.78 * swing,
+          0.04 * swing,
+          0.16 * swing,
+          weight
+        );
+        this.applyBoneRotation(
+          this.rightHandBone,
+          -0.42 + 0.72 * swing,
+          0.08 * swing,
+          0.16 * swing,
+          weight
+        );
+        this.applyBoneRotation(this.leftArmBone, 0.32, 0.1, 0.3, weight * 0.74);
+        break;
+      }
+
+      case 'attackHeavy': {
+        const swing = this.computeSwing(progress, 0.45, 0.88);
+        const windup = Math.sin(progress * Math.PI);
+        this.setModelPitch(-0.16 * windup * weight);
+        this.applyBoneRotation(this.spineBone, -0.26 * windup, 0.58 * swing, 0.04 * swing, weight);
+        this.applyBoneRotation(
+          this.rightArmBone,
+          -0.85 + 1.45 * swing,
+          -0.34 * swing,
+          -0.38 * swing,
+          weight
+        );
+        this.applyBoneRotation(
+          this.rightForeArmBone,
+          -1.25 + 1.95 * swing,
+          0.08 * swing,
+          0.28 * swing,
+          weight
+        );
+        this.applyBoneRotation(
+          this.rightHandBone,
+          -0.45 + 0.72 * swing,
+          0.1 * swing,
+          0.16 * swing,
+          weight
+        );
+        this.applyBoneRotation(this.leftArmBone, 0.34, 0.12, 0.34, weight * 0.78);
         break;
       }
 
       case 'roll': {
-        const tuck = Math.sin(progress * Math.PI);
-        const spin = progress * Math.PI * 2;
-        this.setModelPitch(spin * weight);
-        this.applyBoneRotation(this.spineBone, -0.7 * tuck, 0, 0, weight);
-        this.applyBoneRotation(this.rightArmBone, -1.1 * tuck, 0.2, -0.1, weight);
-        this.applyBoneRotation(this.leftArmBone, -1.0 * tuck, -0.15, 0.1, weight);
-        this.applyBoneRotation(this.rightForeArmBone, -0.7 * tuck, 0, 0, weight);
+        const crouch = THREE.MathUtils.smoothstep(progress, 0, 0.16);
+        const tumble = Math.sin(Math.min(1, progress / 0.64) * Math.PI);
+        const recover = THREE.MathUtils.smoothstep(progress, 0.58, 1);
+        const pitch = (-0.24 * crouch - 1.18 * tumble + 1.02 * recover) * weight;
+        this.setModelPitch(pitch);
+        this.applyBoneRotation(this.spineBone, -0.82 * tumble, 0, 0, weight);
+        this.applyBoneRotation(this.rightArmBone, -1.22 * tumble, 0.12, -0.12, weight);
+        this.applyBoneRotation(this.leftArmBone, -1.16 * tumble, -0.12, 0.12, weight);
+        this.applyBoneRotation(this.rightForeArmBone, -0.88 * tumble, 0, 0, weight);
         break;
       }
 
       case 'backstep': {
         const recoil = Math.sin(progress * Math.PI);
-        this.setModelPitch(-0.28 * recoil * weight);
-        this.applyBoneRotation(this.spineBone, -0.25 * recoil, 0, 0, weight);
-        this.applyBoneRotation(this.rightArmBone, -0.35 * recoil, 0.05, 0, weight);
-        this.applyBoneRotation(this.leftArmBone, -0.25 * recoil, -0.05, 0, weight);
+        const settle = THREE.MathUtils.smoothstep(progress, 0.55, 1);
+        this.setModelPitch((-0.36 * recoil + 0.18 * settle) * weight);
+        this.applyBoneRotation(this.spineBone, -0.3 * recoil, 0, 0, weight);
+        this.applyBoneRotation(this.rightArmBone, -0.42 * recoil, 0.06, 0, weight);
+        this.applyBoneRotation(this.leftArmBone, -0.3 * recoil, -0.06, 0, weight);
         break;
       }
 
