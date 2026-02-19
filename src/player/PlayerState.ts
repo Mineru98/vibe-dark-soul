@@ -3,7 +3,7 @@
  */
 
 /**
- * Top-level player states
+ * Top-level player state groups
  */
 export enum PlayerStateGroup {
   Grounded = 'Grounded',
@@ -12,13 +12,13 @@ export enum PlayerStateGroup {
 }
 
 /**
- * All player states (flat enum for FSM)
+ * All player states
  */
 export enum PlayerStateType {
   // Grounded states
   Idle = 'Idle',
   Walk = 'Walk',
-  WalkBack = 'WalkBack', // 뒤로 걷기
+  WalkBack = 'WalkBack',
   Run = 'Run',
   Sprint = 'Sprint',
   Roll = 'Roll',
@@ -42,7 +42,7 @@ export enum PlayerStateType {
 }
 
 /**
- * Map states to their parent group
+ * Map states to groups
  */
 export const STATE_GROUPS: Record<PlayerStateType, PlayerStateGroup> = {
   [PlayerStateType.Idle]: PlayerStateGroup.Grounded,
@@ -67,7 +67,7 @@ export const STATE_GROUPS: Record<PlayerStateType, PlayerStateGroup> = {
 };
 
 /**
- * Check if a state is in a given group
+ * Check if a state belongs to a given group
  */
 export function isInGroup(state: PlayerStateType, group: PlayerStateGroup): boolean {
   return STATE_GROUPS[state] === group;
@@ -87,7 +87,7 @@ export const MOVEMENT_STATES: Set<PlayerStateType> = new Set([
 ]);
 
 /**
- * States that have i-frames (invincibility)
+ * States with i-frames
  */
 export const IFRAME_STATES: Set<PlayerStateType> = new Set([
   PlayerStateType.Roll,
@@ -95,7 +95,7 @@ export const IFRAME_STATES: Set<PlayerStateType> = new Set([
 ]);
 
 /**
- * States that can be cancelled into roll
+ * States that can cancel into roll/backstep
  */
 export const ROLL_CANCELABLE_STATES: Set<PlayerStateType> = new Set([
   PlayerStateType.Idle,
@@ -107,7 +107,7 @@ export const ROLL_CANCELABLE_STATES: Set<PlayerStateType> = new Set([
 ]);
 
 /**
- * States that can be cancelled into attack
+ * States that can cancel into attack
  */
 export const ATTACK_CANCELABLE_STATES: Set<PlayerStateType> = new Set([
   PlayerStateType.Idle,
@@ -116,12 +116,12 @@ export const ATTACK_CANCELABLE_STATES: Set<PlayerStateType> = new Set([
 ]);
 
 /**
- * Animation names for each state
+ * Animation clip name per state
  */
 export const STATE_ANIMATIONS: Record<PlayerStateType, string> = {
   [PlayerStateType.Idle]: 'Idle',
   [PlayerStateType.Walk]: 'Walk',
-  [PlayerStateType.WalkBack]: 'Walk_Back', // 뒤로 걷기 애니메이션
+  [PlayerStateType.WalkBack]: 'Walk_Back',
   [PlayerStateType.Run]: 'Run',
   [PlayerStateType.Sprint]: 'Sprint',
   [PlayerStateType.Roll]: 'Roll',
