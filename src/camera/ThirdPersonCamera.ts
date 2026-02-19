@@ -59,7 +59,7 @@ const DEFAULT_CONFIG: Required<ThirdPersonCameraConfig> = {
   shoulderOffset: 0.5, // Slight right offset
   minPitch: -Math.PI / 3, // -60 degrees (looking up)
   maxPitch: Math.PI / 2.5, // 72 degrees (looking down)
-  rotationSensitivity: 0.003,
+  rotationSensitivity: 0.0032,
   positionLerpSpeed: 12.0,
   rotationLerpSpeed: 15.0,
   collisionRadius: 0.2,

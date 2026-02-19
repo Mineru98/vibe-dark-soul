@@ -185,7 +185,7 @@ export const DEFAULT_BINDINGS: BindingsConfig = {
     },
   },
   settings: {
-    mouseSensitivity: 0.002,
+    mouseSensitivity: 1.0,
     gamepadDeadzone: 0.15,
     gamepadSensitivity: 2.0,
     invertMouseY: false,

@@ -445,8 +445,8 @@ class InputManagerClass {
         }
       }
 
-      // Mouse delta (for look)
-      if (binding.mouseDelta && this.isPointerLocked) {
+      // Mouse delta (for look). Pointer lock is optional; raw mouse delta still works.
+      if (binding.mouseDelta) {
         const delta =
           binding.mouseDelta === 'x' ? this.mouseDelta.x : this.mouseDelta.y;
         value = delta * this.bindings.settings.mouseSensitivity;
@@ -519,11 +519,6 @@ class InputManagerClass {
 
   private onMouseDown = (event: MouseEvent): void => {
     this.mouseButtonsPressed.add(event.button as MouseButton);
-
-    // Request pointer lock on first click
-    if (!this.isPointerLocked && event.button === MouseButton.Left) {
-      this.requestPointerLock();
-    }
   };
 
   private onMouseUp = (event: MouseEvent): void => {

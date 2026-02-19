@@ -87,7 +87,7 @@ class GameAppClass {
 
     // Initialize core systems
     await PhysicsWorld.init();
-    InputManager.init();
+    InputManager.init(getRenderer().domElement);
     Time.init();
 
     // Initialize UI systems
@@ -260,7 +260,7 @@ class GameAppClass {
       distance: 5,
       heightOffset: 2,
       shoulderOffset: 0, // 캐릭터를 카메라 중앙에 배치
-      rotationSensitivity: 0.003,
+      rotationSensitivity: 0.0032,
     });
 
     this.camera.setTarget(this.player.position);
