@@ -56,13 +56,18 @@ const DEFAULT_CONFIG: Partial<PlayerMotorConfig> = {
   walkSpeed: 3.5,
   runSpeed: 5.0,
   sprintSpeed: 7.0,
-  rollSpeed: 8.0,
-  backstepSpeed: 5.0,
+  rollSpeed: 7.2,
+  backstepSpeed: 5.6,
   gravity: -20.0,
   jumpVelocity: 8.0,
   terminalVelocity: -30.0,
   rotationSpeed: 10.0,
 };
+
+const ROLL_DURATION = 0.62;
+const BACKSTEP_DURATION = 0.44;
+const ATTACK_LIGHT_LUNGE_DURATION = 0.22;
+const ATTACK_HEAVY_LUNGE_DURATION = 0.3;
 
 /**
  * Player Motor class
@@ -91,6 +96,15 @@ export class PlayerMotor {
   // Roll state
   private _rollDirection: THREE.Vector3 = new THREE.Vector3();
   private _isRolling: boolean = false;
+  private _rollElapsed: number = 0;
+  private _rollDuration: number = ROLL_DURATION;
+
+  // Attack root motion state (small forward lunge)
+  private _isAttackLunging: boolean = false;
+  private _attackLungeDirection: THREE.Vector3 = new THREE.Vector3();
+  private _attackLungeElapsed: number = 0;
+  private _attackLungeDuration: number = 0;
+  private _attackLungeSpeed: number = 0;
 
   // 뒤로 이동 상태
   private _isMovingBackward: boolean = false;
@@ -114,7 +128,7 @@ export class PlayerMotor {
    * @param state Current player state
    * @param movementMultiplier Speed multiplier from FSM
    */
-  setState(state: PlayerStateType, movementMultiplier: number = 1.0): void {
+  setState(state: PlayerStateType, _movementMultiplier: number = 1.0): void {
     const prevState = this._currentState;
     this._currentState = state;
 
@@ -123,8 +137,17 @@ export class PlayerMotor {
       this.startRoll();
     } else if (state === PlayerStateType.Backstep && prevState !== PlayerStateType.Backstep) {
       this.startBackstep();
+    } else if (state === PlayerStateType.AttackLight && prevState !== PlayerStateType.AttackLight) {
+      this.startAttackLunge(false);
+    } else if (state === PlayerStateType.AttackHeavy && prevState !== PlayerStateType.AttackHeavy) {
+      this.startAttackLunge(true);
     } else if (state !== PlayerStateType.Roll && state !== PlayerStateType.Backstep) {
       this._isRolling = false;
+      this._rollElapsed = 0;
+    }
+
+    if (state !== PlayerStateType.AttackLight && state !== PlayerStateType.AttackHeavy) {
+      this._isAttackLunging = false;
     }
   }
 
@@ -159,9 +182,9 @@ export class PlayerMotor {
     const cos = Math.cos(cameraYaw);
 
     // right * inputX + forward * inputY
-    // right=(cos, -sin), forward=(sin, cos) on XZ plane
+    // right=(cos, sin), forward=(sin, -cos) on XZ plane
     const worldX = inputX * cos + inputY * sin;
-    const worldZ = -inputX * sin + inputY * cos;
+    const worldZ = inputX * sin - inputY * cos;
 
     this._inputDirection.set(worldX, 0, worldZ).normalize();
 
@@ -190,6 +213,8 @@ export class PlayerMotor {
    */
   private startRoll(): void {
     this._isRolling = true;
+    this._rollElapsed = 0;
+    this._rollDuration = ROLL_DURATION;
 
     // Roll in input direction if available, otherwise forward
     if (this._inputDirection.lengthSq() > 0.01) {
@@ -208,8 +233,25 @@ export class PlayerMotor {
    */
   private startBackstep(): void {
     this._isRolling = true;
+    this._rollElapsed = 0;
+    this._rollDuration = BACKSTEP_DURATION;
     // Backstep is opposite of facing direction
     this._rollDirection.set(-Math.sin(this._yaw), 0, -Math.cos(this._yaw));
+  }
+
+  private startAttackLunge(isHeavy: boolean): void {
+    this._isAttackLunging = true;
+    this._attackLungeElapsed = 0;
+    this._attackLungeDuration = isHeavy
+      ? ATTACK_HEAVY_LUNGE_DURATION
+      : ATTACK_LIGHT_LUNGE_DURATION;
+    this._attackLungeSpeed = isHeavy ? 4.4 : 3.2;
+
+    if (this._inputDirection.lengthSq() > 0.01) {
+      this._attackLungeDirection.copy(this._inputDirection).normalize();
+    } else {
+      this._attackLungeDirection.set(Math.sin(this._yaw), 0, Math.cos(this._yaw));
+    }
   }
 
   /**
@@ -243,11 +285,33 @@ export class PlayerMotor {
 
     // During roll/backstep, use roll direction
     if (this._isRolling) {
+      this._rollElapsed += dt;
+      const progress = Math.min(1, this._rollElapsed / this._rollDuration);
+      const speedScale = this.getRollSpeedScale(progress);
       const speed =
         this._currentState === PlayerStateType.Backstep
           ? this.config.backstepSpeed
           : this.config.rollSpeed;
-      movement.copy(this._rollDirection).multiplyScalar(speed * dt);
+      movement.copy(this._rollDirection).multiplyScalar(speed * speedScale * dt);
+
+      if (progress >= 1) {
+        this._isRolling = false;
+      }
+      return movement;
+    }
+
+    if (this._isAttackLunging) {
+      this._attackLungeElapsed += dt;
+      const progress = Math.min(1, this._attackLungeElapsed / this._attackLungeDuration);
+      const speedScale = Math.sin(progress * Math.PI);
+
+      movement
+        .copy(this._attackLungeDirection)
+        .multiplyScalar(this._attackLungeSpeed * speedScale * dt);
+
+      if (progress >= 1) {
+        this._isAttackLunging = false;
+      }
       return movement;
     }
 
@@ -282,6 +346,18 @@ export class PlayerMotor {
     movement.copy(this._inputDirection).multiplyScalar(speed * dt);
 
     return movement;
+  }
+
+  private getRollSpeedScale(progress: number): number {
+    if (this._currentState === PlayerStateType.Backstep) {
+      if (progress < 0.18) return THREE.MathUtils.lerp(1.0, 1.35, progress / 0.18);
+      if (progress < 0.58) return THREE.MathUtils.lerp(1.35, 0.7, (progress - 0.18) / 0.4);
+      return THREE.MathUtils.lerp(0.7, 0.2, (progress - 0.58) / 0.42);
+    }
+
+    if (progress < 0.15) return THREE.MathUtils.lerp(0.85, 1.25, progress / 0.15);
+    if (progress < 0.6) return THREE.MathUtils.lerp(1.25, 0.9, (progress - 0.15) / 0.45);
+    return THREE.MathUtils.lerp(0.9, 0.25, (progress - 0.6) / 0.4);
   }
 
   /**
