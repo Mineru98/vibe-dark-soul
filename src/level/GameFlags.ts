@@ -19,6 +19,7 @@ import { EventBus } from '../core/EventBus';
 export enum GameFlag {
   // Tutorial progression
   TUTORIAL_COMPLETED = 'tutorial_completed',
+  LEARNED_MOVEMENT = 'learned_movement',
   LEARNED_ROLL = 'learned_roll',
   LEARNED_ATTACK = 'learned_attack',
   LEARNED_BLOCK = 'learned_block',
