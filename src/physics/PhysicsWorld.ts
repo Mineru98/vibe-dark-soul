@@ -68,7 +68,6 @@ interface RegisteredBody {
 class PhysicsWorldManager {
   private world: RAPIER.World | null = null;
   private eventQueue: RAPIER.EventQueue | null = null;
-  private queryPipeline: RAPIER.QueryPipeline | null = null;
 
   private bodies: Map<number, RegisteredBody> = new Map();
   private colliderToEntity: Map<number, string> = new Map();
@@ -95,9 +94,6 @@ class PhysicsWorldManager {
     // Create event queue for collision events
     this.eventQueue = new RAPIER.EventQueue(true);
 
-    // Create query pipeline for raycasts
-    this.queryPipeline = new RAPIER.QueryPipeline();
-
     this.initialized = true;
   }
 
@@ -117,11 +113,6 @@ class PhysicsWorldManager {
 
     // Step the world
     this.world.step(this.eventQueue);
-
-    // Update query pipeline
-    if (this.queryPipeline) {
-      this.queryPipeline.update(this.world);
-    }
 
     // Process collision events
     this.processEvents();
@@ -616,9 +607,6 @@ class PhysicsWorldManager {
     if (this.eventQueue) {
       this.eventQueue.free();
       this.eventQueue = null;
-    }
-    if (this.queryPipeline) {
-      this.queryPipeline = null;
     }
 
     this.bodies.clear();
