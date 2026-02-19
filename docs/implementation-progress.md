@@ -1,6 +1,6 @@
 # Dark Souls 웹 게임 구현 진행 상황
 
-**최종 업데이트**: 2026-02-19 (3차 업데이트)
+**최종 업데이트**: 2026-02-19 (5차 업데이트)
 
 ---
 
@@ -11,13 +11,13 @@ Phase 1: 코어 인프라     [██████████] 100% (2/2)
 Phase 2: 입력 시스템     [██████████] 100% (3/3)
 Phase 3: 물리/KCC        [██████████] 100% (3/3)
 Phase 4: 플레이어        [██████████] 100% (5/5)
-Phase 5: 카메라          [░░░░░░░░░░]   0% (0/2)
-Phase 6: 전투            [░░░░░░░░░░]   0% (0/3)
+Phase 5: 카메라          [██████████] 100% (2/2)
+Phase 6: 전투            [██████████] 100% (3/3)
 Phase 7: 보스 AI         [░░░░░░░░░░]   0% (0/2)
 Phase 8: 레벨            [░░░░░░░░░░]   0% (0/3)
 Phase 9: UI              [░░░░░░░░░░]   0% (0/3)
 
-전체: █████████████░░░░░░░░░░░ 55.6% (15/27)
+전체: █████████████████████░░ 74.1% (20/27)
 ```
 
 ---
@@ -297,24 +297,241 @@ if (player.hasIFrames) { /* 무적 */ }
 
 ---
 
+### Phase 5: 카메라 시스템 ✅
+
+#### 1. ThirdPersonCamera.ts - 3인칭 카메라 ✅
+
+**파일**: `src/camera/ThirdPersonCamera.ts`
+
+- 오비트 카메라 (pitch/yaw 회전)
+- 충돌 회피 (레이캐스트 기반)
+- 부드러운 위치/회전 보간
+- 락온 모드 지원
+- 어깨 오프셋 (전투 가시성)
+- 줌 인/아웃
+
+**사용 예시**:
+```typescript
+const camera = new ThirdPersonCamera({
+  distance: 4.0,
+  heightOffset: 1.6,
+  shoulderOffset: 0.5,
+});
+
+// 타겟 설정
+camera.setTarget(player.position);
+
+// 마우스 입력
+camera.rotate(deltaX, deltaY);
+
+// 매 프레임 업데이트
+camera.update(dt);
+
+// 락온 모드
+camera.setLockOnTarget(enemy.position);
+
+// Three.js 카메라 접근
+scene.add(camera.getCamera());
+```
+
+#### 2. LockOnSystem.ts - 락온 시스템 ✅
+
+**파일**: `src/camera/LockOnSystem.ts`
+
+- 타겟 후보 선정 (거리/FOV 기반)
+- LOS (Line of Sight) 체크
+- 타겟 전환 (좌/우)
+- 자동 해제 (거리/LOS 손실)
+- 우선순위 기반 타겟 선택
+
+**사용 예시**:
+```typescript
+const lockOn = new LockOnSystem({
+  maxLockDistance: 20.0,
+  lockOnFOV: Math.PI / 3, // 60도
+});
+
+// 타겟 등록
+lockOn.registerTarget({
+  entityId: 'boss_1',
+  position: boss.position,
+  lockOnHeight: 1.5,
+});
+
+// 락온 토글
+if (InputManager.isJustPressed(Action.LockOn)) {
+  lockOn.toggleLockOn();
+}
+
+// 타겟 전환
+lockOn.switchTargetRight();
+lockOn.switchTargetLeft();
+
+// 매 프레임 업데이트
+lockOn.setPlayerPosition(player.position);
+lockOn.setCamera(camera.position, camera.forward);
+lockOn.update(dt);
+
+// 락온 포인트 가져오기
+if (lockOn.isLockedOn) {
+  camera.setLockOnTarget(lockOn.lockOnPoint);
+}
+```
+
+---
+
+### Phase 6: 전투 시스템 ✅
+
+#### 1. IFrameSystem.ts - 무적 프레임 관리 ✅
+
+**파일**: `src/combat/IFrameSystem.ts`
+
+- 엔티티별 i-frame 관리
+- 다양한 소스 지원 (Roll, Backstep, HyperArmor, Respawn, PlungeAttack)
+- 애니메이션 진행률 기반 i-frame 갱신
+- 부분 감소 지원 (damageReduction 0-1)
+- 자동 만료 처리
+
+**사용 예시**:
+```typescript
+import { IFrameSystem, IFrameSource } from './combat/IFrameSystem';
+
+// 롤 i-frame 부여 (0.3초)
+IFrameSystem.grantIFrames('player', IFrameSource.Roll, 0.3);
+
+// 애니메이션 진행률 기반 i-frame
+IFrameSystem.updateProgressBasedIFrames(
+  'player',
+  IFrameSource.Roll,
+  progress,  // 현재 진행률
+  0.12,      // i-frame 시작
+  0.46,      // i-frame 끝
+  0.75       // 총 애니메이션 시간
+);
+
+// 체크
+if (IFrameSystem.hasIFrames('player')) { /* 무적 */ }
+
+// 데미지 감소 계산
+const finalDamage = IFrameSystem.calculateDamageAfterIFrames('player', baseDamage);
+```
+
+#### 2. DamageSystem.ts - 데미지 계산 ✅
+
+**파일**: `src/combat/DamageSystem.ts`
+
+- 중앙화된 데미지 처리
+- I-frame 체크 → 가드 체크 → 데미지 적용 → 사망 체크
+- 패리 지원
+- 가드 스태미나 소비/브레이크
+- 포이즈 데미지 및 스태거
+- 저항력 시스템
+- 크리티컬 히트 배율
+
+**처리 순서**:
+1. i-frame 체크 → 무시 (DamageBlockedReason.IFrames)
+2. 가드/패리 체크 → 스태미나 데미지 or 무시
+3. HP 데미지 적용 + 포이즈 데미지
+4. 사망 체크
+
+**사용 예시**:
+```typescript
+import { DamageSystem, DamageRequest, DamageSourceType } from './combat/DamageSystem';
+import { DamageType } from './player/PlayerStats';
+
+// 엔티티 등록
+DamageSystem.registerEntity({
+  entityId: 'player',
+  currentHP: 100,
+  maxHP: 100,
+  currentStamina: 100,
+  maxStamina: 100,
+  currentPoise: 30,
+  maxPoise: 30,
+  isGuarding: false,
+  isParrying: false,
+  isDead: false,
+  guardDamageReduction: 0.9,
+  onTakeDamage: (result) => console.log(`Took ${result.finalDamage} damage`),
+  onDie: () => console.log('Player died'),
+});
+
+// 데미지 처리
+const result = DamageSystem.processDamage({
+  sourceEntityId: 'boss_1',
+  sourceType: DamageSourceType.BossAttack,
+  targetEntityId: 'player',
+  baseDamage: 40,
+  damageType: DamageType.Physical,
+  poiseDamage: 30,
+  canBeBlocked: true,
+  canBeDodged: true,
+});
+
+if (result.applied) {
+  console.log(`Dealt ${result.finalDamage} damage, staggered: ${result.targetStaggered}`);
+}
+```
+
+#### 3. AttackSystem.ts - 공격 실행/히트박스 ✅
+
+**파일**: `src/combat/AttackSystem.ts`
+
+- 공격 데이터 정의 (데미지, 프레임, 히트박스 등)
+- 프레임 스윕 히트박스 (무기 소켓 2점 → shapeCast)
+- AoE 공격 (overlapSphere)
+- 다중 히트 방지 (같은 대상 1회만)
+- 콤보 윈도우 지원
+- DamageSystem 연동
+
+**기본 공격 라이브러리**:
+- `player_light_1/2/3` - 플레이어 라이트 콤보
+- `player_heavy` - 플레이어 헤비 어택
+- `player_plunge` - 플런지 어택
+- `boss_wide_sweep`, `boss_overhead_smash`, `boss_jump_slam`, `boss_aoe_stomp` - 보스 패턴
+
+**사용 예시**:
+```typescript
+import { AttackSystem, WeaponSockets } from './combat/AttackSystem';
+import { CollisionGroups } from './physics/CollisionGroups';
+
+// 공격 시작
+const attack = AttackSystem.startAttack(
+  'player',
+  'player_light_1',
+  playerCollider,
+  { base: weaponBase, tip: weaponTip },
+  playerForward
+);
+
+// 매 프레임 업데이트 (애니메이션 진행률 기준)
+const hits = AttackSystem.updateAttack(
+  attack,
+  animProgress,  // 0-1
+  { base: weaponBase, tip: weaponTip },
+  CollisionGroups.ENEMY
+);
+
+// 콤보 체크
+if (AttackSystem.isInComboWindow(attack) && nextAttackInput) {
+  // 다음 콤보 시작
+}
+
+// 공격 종료
+AttackSystem.endAttack(attack);
+```
+
+---
+
 ## 현재 진행 중
 
-### Phase 5 착수 예정
-- `src/camera/ThirdPersonCamera.ts` - 3인칭 카메라
-- `src/camera/LockOnSystem.ts` - 락온 시스템
+### Phase 7 착수 예정
+- `src/ai/BossFSM.ts` - 보스 상태 머신
+- `src/ai/Boss.ts` - 보스 엔티티
 
 ---
 
 ## 예정된 작업
-
-### Phase 5: 카메라 시스템
-- `src/camera/ThirdPersonCamera.ts` - 3인칭 카메라
-- `src/camera/LockOnSystem.ts` - 락온 시스템
-
-### Phase 6: 전투 시스템
-- `src/combat/AttackSystem.ts` - 공격 실행/히트박스
-- `src/combat/DamageSystem.ts` - 데미지 계산
-- `src/combat/IFrameSystem.ts` - 무적 프레임
 
 ### Phase 7: 보스 AI
 - `src/ai/BossFSM.ts` - 보스 상태 머신
@@ -357,6 +574,13 @@ src/
 │   ├── PlayerMotor.ts  ✅ NEW
 │   ├── PlayerStats.ts  ✅ NEW
 │   └── Player.ts       ✅ NEW
+├── camera/
+│   ├── ThirdPersonCamera.ts ✅ NEW
+│   └── LockOnSystem.ts ✅ NEW
+├── combat/
+│   ├── IFrameSystem.ts  ✅ NEW
+│   ├── DamageSystem.ts  ✅ NEW
+│   └── AttackSystem.ts  ✅ NEW
 ├── effects/            (기존 유지)
 └── ui/
     └── Menu.ts         (기존)
@@ -365,6 +589,27 @@ src/
 ---
 
 ## 변경 로그
+
+### 2026-02-19 (5차 업데이트)
+
+#### 추가됨
+- `src/combat/IFrameSystem.ts` - 무적 프레임 관리 시스템
+- `src/combat/DamageSystem.ts` - 중앙화된 데미지 처리 시스템
+- `src/combat/AttackSystem.ts` - 공격 실행 및 히트박스 시스템
+
+#### 진행률
+- Phase 1-6 완료
+- 전체 74.1% 완료
+
+### 2026-02-19 (4차 업데이트)
+
+#### 추가됨
+- `src/camera/ThirdPersonCamera.ts` - 3인칭 오비트 카메라
+- `src/camera/LockOnSystem.ts` - 락온 타겟팅 시스템
+
+#### 진행률
+- Phase 1-5 완료
+- 전체 63.0% 완료
 
 ### 2026-02-19 (3차 업데이트)
 
@@ -430,8 +675,36 @@ src/
 - **구현**: 애니메이션 진행률 기반
 - **동작**: 윈도우 내 입력 시 다음 콤보로 전이
 
+### 6. 3인칭 카메라 충돌 회피
+- **이유**: 벽 뒤로 카메라가 들어가는 것 방지
+- **구현**: 레이캐스트로 장애물 감지 → 거리 조정
+- **설정**: collisionRadius(0.2), collisionPadding(0.3)
+- **필터**: ENVIRONMENT 그룹만 충돌 체크
+
+### 7. 락온 LOS 체크
+- **이유**: 벽 뒤의 적에게 락온 방지
+- **구현**: 주기적 레이캐스트 (0.1초 간격)
+- **타임아웃**: LOS 손실 1초 후 락온 해제
+- **FOV**: 획득 60°, 전환 90°
+
+### 8. 프레임 스윕 히트박스
+- **이유**: 빠른 공격에서 히트 누락 방지
+- **구현**: 무기 소켓 2점(base, tip) → shapeCast
+- **방식**: 이전 프레임 위치에서 현재 위치로 캡슐 캐스트
+- **AoE**: 슬램 공격은 overlapSphere 사용
+
+### 9. 다중 히트 방지
+- **이유**: 한 공격에 같은 대상이 여러 번 피격되는 것 방지
+- **구현**: ActiveAttack.hitEntities Set으로 추적
+- **리셋**: 새로운 공격 시작 시 초기화
+
+### 10. 중앙화된 데미지 처리
+- **이유**: 데미지 로직 일관성 및 가드/i-frame 처리 통합
+- **흐름**: IFrameSystem 체크 → Guard 체크 → HP/Poise 적용
+- **이벤트**: combat:dodged, combat:blocked, combat:parried, combat:damage
+
 ---
 
 ## 다음 업데이트 예정
 
-Phase 5 (카메라 시스템) 완료 후 업데이트 예정
+Phase 7 (보스 AI) 완료 후 업데이트 예정
