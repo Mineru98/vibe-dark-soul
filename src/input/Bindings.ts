@@ -122,6 +122,10 @@ export const DEFAULT_BINDINGS: BindingsConfig = {
       keys: ['Space'],
       gamepadButtons: [GamepadButton.B],
     },
+    [Action.Sprint]: {
+      keys: ['Space'], // Hold Space to sprint
+      gamepadButtons: [GamepadButton.B],
+    },
     [Action.Block]: {
       keys: ['ShiftLeft', 'ShiftRight'],
       gamepadButtons: [GamepadButton.LB],

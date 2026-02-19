@@ -13,7 +13,8 @@ export enum Action {
   // Combat
   Attack = 'Attack',
   StrongAttack = 'StrongAttack',
-  Roll = 'Roll', // Also sprint when held
+  Roll = 'Roll',
+  Sprint = 'Sprint', // Hold to sprint
   Block = 'Block',
   Parry = 'Parry',
 

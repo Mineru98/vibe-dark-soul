@@ -14,11 +14,11 @@ import { EventBus } from '../core/EventBus';
 import {
   Action,
   Axis,
-  ActionState,
+  type ActionState,
   DEFAULT_ACTION_STATE,
 } from './Action';
 import {
-  BindingsConfig,
+  type BindingsConfig,
   DEFAULT_BINDINGS,
   MouseButton,
   GamepadButton,
