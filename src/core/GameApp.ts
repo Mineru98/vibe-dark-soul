@@ -367,9 +367,16 @@ class GameAppClass {
 
     // Update player
     if (this.player && !this.player.isDead) {
-      // Update camera yaw for input transformation
+      // Update camera yaw for input transformation.
+      // Derive from the camera's actual forward vector so movement stays aligned
+      // even when camera look direction diverges from internal yaw (e.g. lock-on).
       if (this.camera) {
-        this.player.setCameraYaw(this.camera.yaw);
+        const forward = this.camera.forward;
+        const flatLenSq = forward.x * forward.x + forward.z * forward.z;
+        if (flatLenSq > 1e-6) {
+          const cameraYaw = Math.atan2(-forward.x, -forward.z);
+          this.player.setCameraYaw(cameraYaw);
+        }
       }
 
       // Update lock-on target
