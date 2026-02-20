@@ -96,6 +96,7 @@ function createGround(): void {
 
   const groundGeometry = new THREE.PlaneGeometry(20, 20);
   const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+  ground.name = 'titleGround';
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = 0;
   ground.receiveShadow = true;
@@ -111,6 +112,7 @@ function createGround(): void {
     side: THREE.DoubleSide,
   });
   const fogPlane = new THREE.Mesh(fogPlaneGeometry, fogPlaneMaterial);
+  fogPlane.name = 'titleFogPlane';
   fogPlane.rotation.x = -Math.PI / 2;
   fogPlane.position.y = 0.05;
   scene.add(fogPlane);
